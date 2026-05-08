@@ -1,0 +1,736 @@
+// prisma/schema.prisma
+// Patilikap — Final Schema
+// [ADD] CargoRate — dinamik kargo fiyat tablosu
+// [ADD] Product.productionDate + index'ler
+// [ADD] SystemConfig.freeShipping
+// [UPDATE] StoreOrder token alanları zaten var
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── KULLANICI & AUTH ──────────────────────────────────────────────────────────
+
+model User {
+  id                  String          @id @default(cuid())
+  email               String          @unique
+  emailVerified       Boolean         @default(false)
+  name                String?
+  image               String?
+  phone               String?
+  role                Role            @default(DONOR)
+  onboardingCompleted Boolean         @default(false)
+
+  shelters      Shelter[]
+  orders        Order[]
+  storeOrders   StoreOrder[]
+  reviews       ProductReview[]
+  addresses     UserAddress[]
+  accounts      Account[]
+  sessions      Session[]
+  notifications Notification[]
+  couponUsages  CouponUsage[]
+  storyViews    StoryView[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@map("user")
+}
+
+enum Role {
+  ADMIN
+  SHELTER
+  DONOR
+}
+
+// ─── BARINAKLAR ────────────────────────────────────────────────────────────────
+
+model Shelter {
+  id               String        @id @default(cuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id])
+  name             String
+  city             String
+  district         String?
+  address          String?
+  phone            String?
+  documentUrls     String[]      @default([])
+  description      String?
+  coverImageUrl    String?
+  authorizedPerson String?
+  facebookUrl      String?
+  instagramUrl     String?
+  twitterUrl       String?
+  websiteUrl       String?
+  locationLink     String?
+  status           ShelterStatus @default(PENDING)
+  campaigns        Campaign[]
+  stories          ShelterStory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+enum ShelterStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  INACTIVE
+}
+
+// ─── HİKAYELER ────────────────────────────────────────────────────────────────
+
+model ShelterStory {
+  id         String    @id @default(cuid())
+  shelterId  String
+  shelter    Shelter   @relation(fields: [shelterId], references: [id], onDelete: Cascade)
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  status StoryStatus @default(PENDING)
+
+  type      StoryType
+  mediaUrl  String
+  caption   String?
+  link      String?
+  expiresAt DateTime
+  isActive  Boolean   @default(true)
+  viewCount Int       @default(0)
+
+  views StoryView[]
+
+  createdAt DateTime @default(now())
+
+  @@index([shelterId, isActive, expiresAt])
+  @@index([campaignId])
+}
+
+enum StoryStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum StoryType {
+  IMAGE
+  VIDEO
+}
+
+model StoryView {
+  id        String       @id @default(cuid())
+  storyId   String
+  story     ShelterStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  viewerKey String       // userId veya IP — dedup için
+
+  viewedAt DateTime @default(now())
+
+  @@unique([storyId, viewerKey])
+  @@index([storyId])
+}
+
+// ─── KAMPANYALAR ───────────────────────────────────────────────────────────────
+
+model Campaign {
+  id                  String         @id @default(cuid())
+  shelterId           String
+  shelter             Shelter        @relation(fields: [shelterId], references: [id])
+  status              CampaignStatus @default(ACTIVE)
+  slug                String?        @unique
+  title               String?
+  story               String?
+  coverImageUrl       String?
+  isFeatured          Boolean        @default(false)
+  featuredUntil       DateTime?
+  autoRestartWhenFull Boolean        @default(true)
+  viewCount           Int            @default(0)
+  shareCount          Int            @default(0)
+
+  products CampaignProduct[]
+  items    OrderItem[]
+  stories  ShelterStory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shelterId, status])
+  @@index([shelterId])
+  @@index([isFeatured, status])
+}
+
+enum CampaignStatus {
+  ACTIVE
+  INACTIVE
+  QUEUED
+  COMPLETED
+  SHIPPED
+  DELIVERED
+}
+
+// ─── ÜRÜNLER (Bağış + Mağaza) ─────────────────────────────────────────────────
+
+model Product {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  description      String?
+  imageUrl         String?
+  galleryImageUrls String[] @default([])
+
+  // Fiyatlandırma
+  price        Decimal
+  comparePrice Decimal?
+
+  // Stok
+  stock      Int     @default(9999)
+  trackStock Boolean @default(true)
+
+  // Nerede görünsün?
+  showInStore    Boolean @default(false)
+  showInDonation Boolean @default(false)
+
+  // Genel
+  isActive   Boolean @default(true)
+  isFeatured Boolean @default(false)
+  sortOrder  Int     @default(0)
+
+  // Ürün bilgileri
+  productionDate  DateTime? // [ADD] üretim tarihi
+  expiryDate      DateTime? // son kullanma tarihi
+  nutritionValues Json?
+  weightKg        Float?    // kargo hesabı için
+  brand           String?
+  tags            String[]  @default([])
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  campaigns       CampaignProduct[]
+  orderItems      OrderItem[]
+  storeOrderItems StoreOrderItem[]
+  reviews         ProductReview[]
+  stockAlerts     StockAlert[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Mağaza filtreleme & sıralama index'leri
+  @@index([showInStore, isActive, sortOrder])   // mağaza listesi — varsayılan sıralama
+  @@index([showInStore, isActive, price])       // fiyata göre sırala
+  @@index([showInStore, isActive, createdAt])   // yeniye göre sırala
+  @@index([showInStore, isActive, name])        // A-Z / Z-A sıralama
+  @@index([categoryId, showInStore, isActive])  // kategoriye göre filtre
+  @@index([brand, showInStore])                 // markaya göre filtre
+  @@index([showInDonation])                     // bağış kataloğu
+  @@index([isActive, isFeatured])               // öne çıkan ürünler
+}
+
+// ─── KAMPANYA ÜRÜNÜ ───────────────────────────────────────────────────────────
+
+model CampaignProduct {
+  id           String   @id @default(cuid())
+  campaignId   String
+  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id])
+  targetStock  Int
+  currentStock Int      @default(0)
+
+  @@unique([campaignId, productId])
+  @@index([campaignId])
+}
+
+// ─── BAĞIŞ SİPARİŞLERİ ────────────────────────────────────────────────────────
+
+model Order {
+  id            String        @id @default(cuid())
+  orderNumber   String        @unique
+  userId        String?
+  user          User?         @relation(fields: [userId], references: [id])
+  guestName     String?
+  guestPhone    String?
+  guestEmail    String?
+  guestAddress  String?
+  guestCity     String?
+  totalAmount   Decimal
+  paymentStatus PaymentStatus @default(WAITING_APPROVAL)
+  paymentMethod String        @default("EFT")
+  paymentNote   String?
+  receiptUrl    String?
+  paytxMerchantOid     String?
+  isAdminRead          Boolean   @default(false)
+  cancelToken          String?   @unique
+  cancelTokenExpiresAt DateTime?
+  cancelRequest        Boolean   @default(false)
+  cancelRequestedAt    DateTime?
+  expiresAt            DateTime?
+  trackingToken        String?   @unique
+  items                OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([paymentStatus, createdAt])
+  @@index([userId, createdAt])
+  @@index([cancelRequest, createdAt])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Decimal  @default(1)
+
+  // Snapshot
+  productName  String  @default("")
+  productImage String?
+  unitPrice    Decimal @default(0)
+
+  @@index([orderId])
+}
+
+enum PaymentStatus {
+  WAITING_APPROVAL
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+// ─── KATEGORİLER ──────────────────────────────────────────────────────────────
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  slug      String?    @unique
+  imageUrl  String?
+  sortOrder Int        @default(0)
+  parentId  String?
+  parent    Category?  @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Category[] @relation("CategoryChildren")
+  products  Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── MAĞAZA SİPARİŞLERİ ───────────────────────────────────────────────────────
+
+model StoreOrder {
+  id               String             @id @default(cuid())
+  orderNumber      String             @unique
+  userId           String?
+  user             User?              @relation(fields: [userId], references: [id])
+  guestName        String?
+  guestEmail       String?
+  guestPhone       String?
+  guestAddress     String?
+  guestCity        String?
+  subtotal         Decimal
+  discountAmount   Decimal            @default(0)
+  shippingFee      Decimal            @default(0)
+  totalAmount      Decimal
+  paymentMethod    StorePaymentMethod @default(EFT)
+  paymentStatus    PaymentStatus      @default(WAITING_APPROVAL)
+  paytxMerchantOid String?
+  orderStatus      StoreOrderStatus   @default(PENDING)
+  shippingAddress  String?
+  receiptUrl       String?
+  couponId         String?
+  coupon           Coupon?            @relation(fields: [couponId], references: [id])
+  couponCode       String?
+  couponUsage      CouponUsage?
+  paymentNote      String?
+  isAdminRead      Boolean            @default(false)
+  cancelToken          String?   @unique
+  cancelTokenExpiresAt DateTime?
+  cancelRequest        Boolean   @default(false)
+  cancelRequestedAt    DateTime?
+  expiresAt            DateTime?
+  trackingToken        String?   @unique
+
+  items      StoreOrderItem[]
+  statusLogs OrderStatusLog[]
+  shipment   Shipment?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([paymentStatus, orderStatus])
+  @@index([orderStatus, createdAt])
+  @@index([cancelRequest, createdAt])
+  @@index([paymentMethod])
+}
+
+enum StoreOrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY_TO_SHIP
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum StorePaymentMethod {
+  EFT
+  PAYTR
+}
+
+model StoreOrderItem {
+  id           String     @id @default(cuid())
+  orderId      String
+  order        StoreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id])
+  productName  String
+  productImage String?
+  unitPrice    Decimal
+  quantity     Int
+  weightKg     Float?     // snapshot — kargo hesabı için
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model OrderStatusLog {
+  id         String            @id @default(cuid())
+  orderId    String
+  order      StoreOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus StoreOrderStatus?
+  toStatus   StoreOrderStatus
+  note       String?
+  changedBy  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+// ─── KARGO ────────────────────────────────────────────────────────────────────
+
+model Shipment {
+  id             String         @id @default(cuid())
+  storeOrderId   String         @unique
+  storeOrder     StoreOrder     @relation(fields: [storeOrderId], references: [id], onDelete: Cascade)
+  provider       String
+  trackingNumber String
+  trackingUrl    String?
+  status         ShipmentStatus @default(PENDING)
+  estimatedAt    DateTime?
+  deliveredAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([storeOrderId])
+}
+
+enum ShipmentStatus {
+  PENDING
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  RETURNED
+}
+
+// ─── KARGO FİYAT TABLOSU [ADD] ────────────────────────────────────────────────
+// Admin dinamik olarak ekler/siler/günceller
+// Örnek: 0-5kg → 50 TL, 5-10kg → 80 TL, 80kg+ → null (maxKg)
+
+model CargoRate {
+  id        String   @id @default(cuid())
+  minKg     Float    // başlangıç kg (dahil)
+  maxKg     Float?   // bitiş kg (dahil) — null ise sınırsız (80+)
+  price     Decimal  // kargo ücreti
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([minKg, isActive])
+}
+
+// ─── KULLANICI ADRESLERİ ──────────────────────────────────────────────────────
+
+model UserAddress {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  fullName  String
+  phone     String
+  city      String
+  district  String
+  address   String
+  zipCode   String?
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ─── ÜRÜN DEĞERLENDİRMELERİ ───────────────────────────────────────────────────
+
+model ProductReview {
+  id         String  @id @default(cuid())
+  productId  String
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User    @relation(fields: [userId], references: [id])
+  rating     Int
+  title      String?
+  comment    String?
+  isApproved Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@unique([productId, userId])
+  @@index([productId, isApproved])
+  @@index([userId])
+}
+
+// ─── KUPONLAR ─────────────────────────────────────────────────────────────────
+
+model Coupon {
+  id             String        @id @default(cuid())
+  code           String        @unique
+  description    String?
+  type           CouponType
+  value          Decimal
+  minOrderAmount Decimal?
+  maxUses        Int?
+  maxUsesPerUser Int           @default(1)
+  usedCount      Int           @default(0)
+  isActive       Boolean       @default(true)
+  startsAt       DateTime?
+  expiresAt      DateTime?
+  orders         StoreOrder[]
+  usages         CouponUsage[]
+
+  createdAt DateTime @default(now())
+}
+
+model CouponUsage {
+  id       String     @id @default(cuid())
+  couponId String
+  coupon   Coupon     @relation(fields: [couponId], references: [id])
+  userId   String?
+  user     User?      @relation(fields: [userId], references: [id])
+  orderId  String     @unique
+  order    StoreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  usedAt DateTime @default(now())
+
+  @@index([couponId])
+  @@index([userId])
+}
+
+enum CouponType {
+  FIXED
+  PERCENTAGE
+}
+
+// ─── STOK UYARISI ─────────────────────────────────────────────────────────────
+
+model StockAlert {
+  id         String    @id @default(cuid())
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  email      String
+  userId     String?
+  notified   Boolean   @default(false)
+  notifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([productId, email])
+  @@index([productId, notified])
+}
+
+// ─── İÇERİK & GÖRÜNÜM ─────────────────────────────────────────────────────────
+
+model HeroSlide {
+  id          String  @id @default(cuid())
+  title       String
+  description String?
+  buttonText  String?
+  buttonLink  String?
+  imageUrl    String
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StoreBrand {
+  id        String  @id @default(cuid())
+  name      String
+  imageUrl  String?
+  color     String  @default("#f8dfcc")
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CashDiscount {
+  id        String  @id @default(cuid())
+  threshold Int
+  amount    Int
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+}
+
+// ─── SİSTEM AYARLARI ──────────────────────────────────────────────────────────
+
+model SystemConfig {
+  id                          String  @id @default(cuid())
+  isDefault                   Boolean @default(false)
+  bankName                    String?
+  accountHolder               String?
+  iban                        String?
+  minimumDonationLimit        Int?
+  freeShippingThreshold       Int?    // ücretsiz kargo eşiği (TL)
+  freeShipping                Boolean @default(false) // [ADD] tüm kargoları ücretsiz yap
+  allowNewShelterRegistration Boolean @default(true)
+  allowCampaignCreation       Boolean @default(true)
+  showCategoryEmojis          Boolean @default(true)
+  paytxSurchargePercent       Float   @default(4)
+
+  @@index([isDefault])
+}
+
+// ─── BİLDİRİMLER ──────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+enum NotificationType {
+  ORDER_STATUS
+  PAYMENT_RECEIVED
+  CAMPAIGN_HALF
+  CAMPAIGN_FULL
+  STOCK_AVAILABLE
+  SHELTER_APPROVED
+  SHELTER_REJECTED
+  NEW_STORY
+  SYSTEM
+}
+
+// ─── AKTİVİTE LOGU ────────────────────────────────────────────────────────────
+
+model ActivityLog {
+  id         String        @id @default(cuid())
+  actorId    String?
+  actorName  String?
+  actorType  ActivityActor
+  action     String
+  targetType String?
+  targetId   String?
+  targetName String?
+  message    String?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([actorType, createdAt])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+enum ActivityActor {
+  ADMIN
+  SHELTER
+  DONOR
+  SYSTEM
+}
+
+// ─── BETTER AUTH ──────────────────────────────────────────────────────────────
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([identifier, value])
+  @@index([identifier])
+  @@map("verification")
+}

@@ -1,0 +1,92 @@
+name: Deploy Patilikap API
+
+on:
+  push:
+    branches:
+      - main        # main'e push → otomatik deploy
+  workflow_dispatch: # Manuel tetikleme (GitHub UI'dan)
+
+jobs:
+  # ─── TEST & BUILD ────────────────────────────────────────────────────────────
+  test-and-build:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Kodu çek
+        uses: actions/checkout@v4
+
+      - name: Node.js kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Bağımlılıkları kur
+        run: npm ci
+
+      - name: TypeScript kontrol
+        run: npx tsc --noEmit
+
+      - name: Prisma client üret
+        run: npx prisma generate
+
+  # ─── DEPLOY ──────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Hetzner
+    runs-on: ubuntu-latest
+    needs: test-and-build  # test geçmeden deploy olmaz
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Kodu çek
+        uses: actions/checkout@v4
+
+      - name: Sunucuya bağlan ve deploy et
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: ${{ secrets.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            # Proje klasörüne git
+            cd /opt/patilikap-api
+
+            # Son kodu çek
+            git pull origin main
+
+            # Yeni image build et
+            docker compose build api
+
+            # Migration çalıştır
+            docker compose run --rm api npx prisma migrate deploy
+
+            # Container'ları yeniden başlat
+            docker compose up -d --no-deps api
+
+            # Eski image'ları temizle
+            docker image prune -f
+
+            # Health check
+            sleep 10
+            curl -f http://localhost:3001/health || exit 1
+
+            echo "✅ Deploy başarılı!"
+
+  # ─── BİLDİRİM ────────────────────────────────────────────────────────────────
+  notify:
+    name: Bildirim
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+
+    steps:
+      - name: Deploy başarılı
+        if: needs.deploy.result == 'success'
+        run: echo "✅ Deploy başarılı — $(date)"
+
+      - name: Deploy başarısız
+        if: needs.deploy.result == 'failure'
+        run: |
+          echo "❌ Deploy başarısız!"
+          exit 1

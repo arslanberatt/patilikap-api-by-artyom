@@ -1,0 +1,396 @@
+import type { Context } from "hono";
+import crypto from "crypto";
+import { prisma } from "../../lib/prisma.js";
+import { errors } from "../../lib/errors.js";
+import { activityMessages } from "../../lib/activity.js";
+
+// ─── YARDIMCI ─────────────────────────────────────────────────────────────────
+
+function getPaytrEnv() {
+  const merchantId = process.env.PAYTR_MERCHANT_ID!;
+  const merchantKey = process.env.PAYTR_MERCHANT_KEY!;
+  const merchantSalt = process.env.PAYTR_MERCHANT_SALT!;
+  const testMode = process.env.PAYTR_TEST_MODE === "true" ? "1" : "0";
+  const appUrl = process.env.APP_URL!;
+  const frontendUrl = process.env.FRONTEND_URL!;
+
+  return { merchantId, merchantKey, merchantSalt, testMode, appUrl, frontendUrl };
+}
+
+// ─── TOKEN ────────────────────────────────────────────────────────────────────
+
+export async function getPaytrToken(c: Context) {
+  const body = await c.req.json() as {
+    orderNumber: string;
+    email: string;
+    amount: number;
+    userName: string;
+    userPhone: string;
+    userAddress: string;
+    userCity: string;
+    userIp: string;
+    basketItems: [string, string, number][];
+  };
+
+  const { merchantId, merchantKey, merchantSalt, testMode, appUrl, frontendUrl } = getPaytrEnv();
+
+  const userBasket = Buffer.from(JSON.stringify(body.basketItems)).toString("base64");
+  const hashStr =
+    merchantId +
+    body.userIp +
+    body.orderNumber +
+    body.email +
+    String(body.amount) +
+    userBasket +
+    "0" +        // no_installment
+    "0" +        // max_installment
+    "TL" +       // currency
+    testMode;
+
+  const paytrToken = hashStr + merchantSalt;
+  const token = crypto.createHmac("sha256", merchantKey).update(paytrToken).digest("base64");
+
+  const params = new URLSearchParams({
+    merchant_id: merchantId,
+    user_ip: body.userIp,
+    merchant_oid: body.orderNumber,
+    email: body.email,
+    payment_amount: String(body.amount),
+    paytr_token: token,
+    user_basket: userBasket,
+    debug_on: "0",
+    no_installment: "0",
+    max_installment: "0",
+    user_name: body.userName,
+    user_address: body.userAddress,
+    user_phone: body.userPhone,
+    merchant_ok_url: `${frontendUrl}/payment/success`,
+    merchant_fail_url: `${frontendUrl}/payment/fail`,
+    timeout_limit: "30",
+    currency: "TL",
+    test_mode: testMode,
+    lang: "tr",
+  });
+
+  const response = await fetch("https://www.paytr.com/odeme/api/get-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+
+  const data = await response.json() as { status: string; token?: string; reason?: string };
+
+  if (data.status !== "success" || !data.token) {
+    return c.json({ error: data.reason || "PayTR token alınamadı" }, 500);
+  }
+
+  return c.json({ token: data.token });
+}
+
+// ─── CALLBACK ─────────────────────────────────────────────────────────────────
+
+export async function paytrCallback(c: Context) {
+  const { merchantKey, merchantSalt } = getPaytrEnv();
+
+  // form-urlencoded body
+  const body = await c.req.parseBody() as {
+    merchant_oid: string;
+    status: string;
+    total_amount: string;
+    hash: string;
+  };
+
+  const { merchant_oid, status, total_amount, hash } = body;
+
+  // 1. Hash doğrula
+  const hashStr = merchant_oid + merchantSalt + status + total_amount;
+  const expectedHash = crypto.createHmac("sha256", merchantKey).update(hashStr).digest("base64");
+
+  if (expectedHash !== hash) {
+    return c.text("INVALID_HASH", 400);
+  }
+
+  // 2. Sipariş türünü bul — prefix'e göre
+  // DO- → bağış siparişi, SO- → mağaza siparişi
+  const isDonation = merchant_oid.startsWith("DO-");
+  const isStore = merchant_oid.startsWith("SO-");
+
+  if (isDonation) {
+    await handleDonationCallback(merchant_oid, status);
+  } else if (isStore) {
+    await handleStoreCallback(merchant_oid, status);
+  }
+
+  // PayTR düz metin "OK" bekler
+  return c.text("OK");
+}
+
+async function handleDonationCallback(orderNumber: string, status: string) {
+  const order = await prisma.order.findFirst({
+    where: { orderNumber },
+    include: { items: true, user: true },
+  });
+
+  if (!order) return;
+
+  // Idempotency — zaten işlendiyse tekrar işleme
+  if (order.paymentStatus !== "WAITING_APPROVAL") return;
+
+  if (status === "success") {
+    // PAID yap
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        paymentStatus: "PAID",
+        paytxMerchantOid: orderNumber,
+        isAdminRead: false,
+      },
+    });
+
+    // currentStock artır
+    for (const item of order.items) {
+      await prisma.campaignProduct.updateMany({
+        where: {
+          campaignId: item.campaignId,
+          productId: item.productId,
+        },
+        data: { currentStock: { increment: Number(item.quantity) } },
+      });
+    }
+
+    await checkCampaignProgress(order.items);
+
+    // ActivityLog
+    await prisma.activityLog.create({
+      data: {
+        actorType: "SYSTEM",
+        action: "ORDER_PAID",
+        targetType: "Order",
+        targetId: order.id,
+        targetName: order.orderNumber,
+        message: activityMessages.ORDER_PAID(order.orderNumber),
+        metadata: { paymentMethod: "PAYTR" },
+      },
+    });
+
+  } else {
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { paymentStatus: "CANCELLED" },
+    });
+  }
+}
+
+async function handleStoreCallback(orderNumber: string, status: string) {
+  const order = await prisma.storeOrder.findFirst({
+    where: { orderNumber },
+    include: { items: true, user: true },
+  });
+
+  if (!order) return;
+
+  // Idempotency
+  if (order.paymentStatus !== "WAITING_APPROVAL") return;
+
+  if (status === "success") {
+    await prisma.storeOrder.update({
+      where: { id: order.id },
+      data: {
+        paymentStatus: "PAID",
+        orderStatus: "CONFIRMED",
+        paytxMerchantOid: orderNumber,
+        isAdminRead: false,
+      },
+    });
+
+    // Stok düş
+    for (const item of order.items) {
+      await prisma.product.update({
+        where: { id: item.productId },
+        data: { stock: { decrement: item.quantity } },
+      });
+    }
+
+    // StatusLog
+    await prisma.orderStatusLog.create({
+      data: {
+        orderId: order.id,
+        fromStatus: "PENDING",
+        toStatus: "CONFIRMED",
+        note: "PayTR ödemesi alındı",
+        changedBy: "SYSTEM",
+      },
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        actorType: "SYSTEM",
+        action: "STORE_ORDER_PLACED",
+        targetType: "StoreOrder",
+        targetId: order.id,
+        targetName: order.orderNumber,
+        message: activityMessages.STORE_ORDER_PLACED(order.orderNumber),
+        metadata: { paymentMethod: "PAYTR" },
+      },
+    });
+
+  } else {
+    await prisma.storeOrder.update({
+      where: { id: order.id },
+      data: { paymentStatus: "CANCELLED", orderStatus: "CANCELLED" },
+    });
+
+    await prisma.orderStatusLog.create({
+      data: {
+        orderId: order.id,
+        fromStatus: "PENDING",
+        toStatus: "CANCELLED",
+        note: "PayTR ödemesi başarısız",
+        changedBy: "SYSTEM",
+      },
+    });
+  }
+}
+
+// ─── İADE ─────────────────────────────────────────────────────────────────────
+
+/**
+ * PayTR üzerinden iade başlatır
+ * Sadece admin çağırabilir
+ */
+export async function paytrRefund(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { merchantId, merchantKey, merchantSalt } = getPaytrEnv();
+
+  const body = await c.req.json() as { orderId: string; orderType: "donation" | "store" };
+
+  // Siparişi bul
+  let order: any = null;
+  if (body.orderType === "donation") {
+    order = await prisma.order.findFirst({ where: { id: body.orderId } });
+  } else {
+    order = await prisma.storeOrder.findFirst({ where: { id: body.orderId } });
+  }
+
+  if (!order) return c.json(errors.NOT_FOUND, 404);
+  if (order.paymentStatus !== "PAID") return c.json(errors.BAD_REQUEST, 400);
+  if (order.paymentMethod !== "PAYTR" && !order.paytxMerchantOid) {
+    return c.json({ error: "Not a PayTR order" }, 400);
+  }
+
+  // İade tutarı — TL cinsinden ondalıklı string
+  const returnAmount = Number(order.totalAmount).toFixed(2);
+
+  // Hash hesapla
+  const hashStr = merchantId + order.paytxMerchantOid + returnAmount + merchantSalt;
+  const token = crypto.createHmac("sha256", merchantKey).update(hashStr).digest("base64");
+
+  // PayTR'ye iade isteği
+  const params = new URLSearchParams({
+    merchant_id: merchantId,
+    merchant_oid: order.paytxMerchantOid,
+    return_amount: returnAmount,
+    merchant_key: merchantKey,
+    paytr_token: token,
+  });
+
+  const response = await fetch("https://www.paytr.com/odeme/iade", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+
+  const data = await response.json() as { status: string; err_no?: string; err_msg?: string };
+
+  if (data.status !== "success") {
+    return c.json({ error: data.err_msg || "İade başlatılamadı" }, 500);
+  }
+
+  // DB güncelle
+  if (body.orderType === "donation") {
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { paymentStatus: "REFUNDED" },
+    });
+  } else {
+    await prisma.storeOrder.update({
+      where: { id: order.id },
+      data: { paymentStatus: "REFUNDED", orderStatus: "REFUNDED" },
+    });
+
+    await prisma.orderStatusLog.create({
+      data: {
+        orderId: order.id,
+        fromStatus: "CONFIRMED",
+        toStatus: "REFUNDED",
+        note: `İade tutarı: ${returnAmount} TL`,
+        changedBy: admin.id,
+      },
+    });
+  }
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "ORDER_REFUNDED",
+      targetType: body.orderType === "donation" ? "Order" : "StoreOrder",
+      targetId: order.id,
+      targetName: order.orderNumber,
+      message: `${order.orderNumber} numaralı sipariş iade edildi (${returnAmount} TL)`,
+    },
+  });
+
+  return c.json({ success: true });
+}
+
+// ─── KAMPANYA PROGRESS KONTROLÜ ───────────────────────────────────────────────
+
+async function checkCampaignProgress(items: { campaignId: string; productId: string; quantity: any }[]) {
+  const campaignIds = [...new Set(items.map((i) => i.campaignId))];
+
+  for (const campaignId of campaignIds) {
+    const products = await prisma.campaignProduct.findMany({ where: { campaignId } });
+
+    const total = products.reduce((sum, p) => sum + p.targetStock, 0);
+    const collected = products.reduce((sum, p) => sum + p.currentStock, 0);
+
+    if (total === 0) continue;
+
+    const percent = (collected / total) * 100;
+    const campaign = await prisma.campaign.findFirst({ where: { id: campaignId } });
+    const shelter = await prisma.shelter.findFirst({ where: { id: campaign?.shelterId } });
+
+    if (!shelter || !campaign) continue;
+
+    if (percent >= 50 && percent < 51) {
+      await prisma.notification.create({
+        data: {
+          userId: shelter.userId,
+          type: "CAMPAIGN_HALF",
+          title: "Kampanya %50 Doldu!",
+          message: `${campaign.title} kampanyanız yarısına ulaştı!`,
+          link: `/campaigns/${campaign.slug}`,
+        },
+      });
+    }
+
+    if (percent >= 100) {
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { status: "COMPLETED" },
+      });
+
+      await prisma.notification.create({
+        data: {
+          userId: shelter.userId,
+          type: "CAMPAIGN_FULL",
+          title: "Kampanya Tamamlandı! 🎉",
+          message: `${campaign.title} kampanyanız tamamlandı!`,
+          link: `/campaigns/${campaign.slug}`,
+        },
+      });
+    }
+  }
+}
