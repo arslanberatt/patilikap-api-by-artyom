@@ -25,11 +25,11 @@ jobs:
       - name: Bağımlılıkları kur
         run: npm ci
 
-      - name: TypeScript kontrol
-        run: npx tsc --noEmit
-
       - name: Prisma client üret
         run: npx prisma generate
+
+      - name: TypeScript kontrol
+        run: npx tsc --noEmit
 
   # ─── DEPLOY ──────────────────────────────────────────────────────────────────
   deploy:
