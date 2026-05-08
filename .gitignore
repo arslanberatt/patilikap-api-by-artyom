@@ -11,6 +11,7 @@
 # deps
 node_modules/
 dist/
+nginx/
 
 # env
 .env
@@ -30,3 +31,5 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+prisma.config.ts
