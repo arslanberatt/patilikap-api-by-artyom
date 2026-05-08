@@ -10,11 +10,11 @@ RUN npm ci
 # Kaynak kodları kopyala
 COPY . .
 
-# TypeScript derle
-RUN npm run build
-
 # Prisma client üret
 RUN npx prisma generate
+
+# TypeScript derle
+RUN npm run build
 
 # ─── PRODUCTION STAGE ─────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
