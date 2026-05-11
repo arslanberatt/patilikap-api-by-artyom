@@ -22,6 +22,7 @@ import campaigns from "./routes/campaigns/campaigns.routes.js";
 import notifications from "./routes/notifications/notifications.routes.js";
 import upload from "./routes/upload/upload.routes.js";
 import admin from "./routes/admin/admin.routes.js";
+import shelterPanel from "./routes/shelter-panel/shelter-panel.routes.js";
 import { authLimiter, generalLimiter, paytrLimiter, uploadLimiter } from "./middleware/rateLimit.js";
 import { secureHeaders } from "hono/secure-headers";
 import { openApiDoc } from "./lib/openapi.js";
@@ -133,6 +134,7 @@ app.route("/api/campaigns", campaigns);
 app.route("/api/notifications", notifications);
 app.route("/api/upload", upload);
 app.route("/api/admin", admin);
+app.route("/api/shelter", shelterPanel);
 
 // ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
 
