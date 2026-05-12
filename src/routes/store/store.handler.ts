@@ -66,15 +66,15 @@ export async function getProducts(c: Context) {
     const skip       = (page - 1) * limit;
 
     // Sıralama — arama varsa relevance yerine sortOrder kullanılır
-    type OrderByType = { price?: "asc" | "desc"; name?: "asc" | "desc"; createdAt?: "asc" | "desc"; sortOrder?: "asc" | "desc"; reviews?: { _count: "asc" | "desc" } };
-    const orderBy: OrderByType = search
+    type OrderByOne = { price?: "asc" | "desc"; name?: "asc" | "desc"; createdAt?: "asc" | "desc"; sortOrder?: "asc" | "desc"; reviews?: { _count: "asc" | "desc" } };
+    const orderBy: OrderByOne | OrderByOne[] = search
         ? { sortOrder: "asc" }
         : sortBy === "price_asc"      ? { price: "asc" }
         : sortBy === "price_desc"     ? { price: "desc" }
         : sortBy === "a_z"            ? { name: "asc" }
         : sortBy === "z_a"            ? { name: "desc" }
         : sortBy === "newest"         ? { createdAt: "desc" }
-        : sortBy === "most_reviewed"  ? { reviews: { _count: "desc" } }
+        : sortBy === "most_reviewed"  ? [{ reviews: { _count: "desc" } }, { sortOrder: "asc" }]
         :                               { sortOrder: "asc" };
 
     // Arama — her kelime ayrı ayrı eşleştirilir (AND mantığı)
