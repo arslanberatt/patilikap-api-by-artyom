@@ -128,13 +128,28 @@ export async function getProducts(c: Context) {
                 category: {
                     select: { id: true, name: true, slug: true },
                 },
+                _count: { select: { reviews: true } },
             },
         }),
         prisma.product.count({ where }),
     ]);
 
+    const productIds = products.map(p => p.id);
+    const avgRatings = await prisma.productReview.groupBy({
+        by: ["productId"],
+        where: { productId: { in: productIds }, isApproved: true },
+        _avg: { rating: true },
+    });
+    const avgMap = new Map(avgRatings.map(r => [r.productId, r._avg.rating]));
+
+    const enriched = products.map(({ _count, ...p }) => ({
+        ...p,
+        reviewCount: _count.reviews,
+        avgRating: avgMap.get(p.id) ?? null,
+    }));
+
     return c.json({
-        products,
+        products: enriched,
         pagination: {
             page,
             limit,
