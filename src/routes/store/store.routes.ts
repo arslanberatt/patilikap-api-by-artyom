@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware.js";
 import {
+  getStoreCategories,
   getProducts,
   getProductBySlug,
   addStockAlert,
@@ -39,6 +40,9 @@ import {
 } from "./store.schema.js";
 
 const store = new Hono();
+
+// ─── PUBLIC — KATEGORİLER ─────────────────────────────────────────────────────
+store.get("/categories", getStoreCategories);
 
 // ─── PUBLIC — ÜRÜNLER ─────────────────────────────────────────────────────────
 store.get("/products", zv("query", productsListQuery), getProducts);

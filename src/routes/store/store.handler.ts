@@ -49,6 +49,16 @@ async function calculateShippingFee(totalWeightKg: number): Promise<number> {
     return lastRate ? Number(lastRate.price) : 0;
 }
 
+// ─── PUBLIC — KATEGORİLER ─────────────────────────────────────────────────────
+
+export async function getStoreCategories(c: Context) {
+    const categories = await prisma.category.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, slug: true },
+    });
+    return c.json(categories);
+}
+
 // ─── PUBLIC — ÜRÜNLER ─────────────────────────────────────────────────────────
 
 export async function getProducts(c: Context) {
