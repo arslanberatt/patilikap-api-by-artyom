@@ -66,15 +66,16 @@ export async function getProducts(c: Context) {
     const skip       = (page - 1) * limit;
 
     // Sıralama — arama varsa relevance yerine sortOrder kullanılır
-    type OrderByType = { price?: "asc" | "desc"; name?: "asc" | "desc"; createdAt?: "asc" | "desc"; sortOrder?: "asc" | "desc" };
+    type OrderByType = { price?: "asc" | "desc"; name?: "asc" | "desc"; createdAt?: "asc" | "desc"; sortOrder?: "asc" | "desc"; reviews?: { _count: "asc" | "desc" } };
     const orderBy: OrderByType = search
         ? { sortOrder: "asc" }
-        : sortBy === "price_asc"  ? { price: "asc" }
-        : sortBy === "price_desc" ? { price: "desc" }
-        : sortBy === "a_z"        ? { name: "asc" }
-        : sortBy === "z_a"        ? { name: "desc" }
-        : sortBy === "newest"     ? { createdAt: "desc" }
-        :                           { sortOrder: "asc" };
+        : sortBy === "price_asc"      ? { price: "asc" }
+        : sortBy === "price_desc"     ? { price: "desc" }
+        : sortBy === "a_z"            ? { name: "asc" }
+        : sortBy === "z_a"            ? { name: "desc" }
+        : sortBy === "newest"         ? { createdAt: "desc" }
+        : sortBy === "most_reviewed"  ? { reviews: { _count: "desc" } }
+        :                               { sortOrder: "asc" };
 
     // Arama — her kelime ayrı ayrı eşleştirilir (AND mantığı)
     // "köpek maması" → "köpek" VE "maması" içeren ürünler gelir
