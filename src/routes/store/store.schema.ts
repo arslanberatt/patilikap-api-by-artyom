@@ -9,7 +9,7 @@ export const productsListQuery = paginationQuery.extend({
   maxPrice: z.coerce.number().min(0).optional(),
   tag:      z.string().optional(),
   search:   z.string().max(100).optional(),
-  sortBy:   z.enum(["sortOrder", "price_asc", "price_desc", "a_z", "z_a", "newest"]).optional(),
+  sortBy:   z.enum(["sortOrder", "price_asc", "price_desc", "a_z", "z_a", "newest", "most_reviewed"]).optional(),
 });
 
 export const reviewsListQuery = paginationQuery;
