@@ -85,7 +85,43 @@ app.use("/api/paytr/*", paytrLimiter);
 app.use("/api/*", generalLimiter);
 
 
-app.all("/api/auth/*", (c) => auth.handler(c.req.raw));
+app.all("/api/auth/*", async (c) => {
+  const method = c.req.method;
+  const path   = c.req.path;
+  const origin = c.req.header("origin") ?? "(no origin)";
+
+  if (method === "POST") {
+    try {
+      const raw = await c.req.text();
+      let body: unknown;
+      try { body = JSON.parse(raw); } catch { body = raw; }
+      if (body && typeof body === "object" && "password" in (body as object)) {
+        body = { ...(body as object), password: "***" };
+      }
+      logger.info(`[AUTH] ${path} | origin=${origin} | body=${JSON.stringify(body)}`);
+      const cloned = new Request(c.req.raw.url, {
+        method: c.req.raw.method,
+        headers: c.req.raw.headers,
+        body: raw,
+      });
+      const res = await auth.handler(cloned);
+      if (res.status >= 400) {
+        const txt = await res.clone().text();
+        logger.warn(`[AUTH] ${res.status} ← ${path} | error=${txt}`);
+      } else {
+        logger.info(`[AUTH] ${res.status} ← ${path}`);
+      }
+      return res;
+    } catch (e) {
+      logger.error(`[AUTH] handler error: ${e}`);
+      return auth.handler(c.req.raw);
+    }
+  }
+
+  const res = await auth.handler(c.req.raw);
+  logger.info(`[AUTH] ${res.status} ← ${method} ${path}`);
+  return res;
+});
 
 // ─── BASE ENDPOINT'LER ────────────────────────────────────────────────────────
 
