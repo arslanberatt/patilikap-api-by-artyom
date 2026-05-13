@@ -105,6 +105,9 @@ const productBase = z.object({
   weightKg:          z.number().min(0).optional(),
   brand:             z.string().max(100).optional(),
   tags:              z.array(z.string()).optional(),
+  sizes:             z.array(z.string()).optional(),
+  colors:            z.array(z.string()).optional(),
+  materials:         z.array(z.string()).optional(),
   categoryId:        z.string().optional(),
 });
 

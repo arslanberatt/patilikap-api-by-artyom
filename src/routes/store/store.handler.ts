@@ -1160,6 +1160,9 @@ export async function adminCreateProduct(c: Context) {
         weightKg?: number;
         brand?: string;
         tags?: string[];
+        sizes?: string[];
+        colors?: string[];
+        materials?: string[];
         categoryId?: string;
     };
 
@@ -1218,6 +1221,9 @@ export async function adminUpdateProduct(c: Context) {
         weightKg: number;
         brand: string;
         tags: string[];
+        sizes: string[];
+        colors: string[];
+        materials: string[];
         categoryId: string;
     }>;
 

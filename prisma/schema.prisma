@@ -53,8 +53,8 @@ enum Role {
 
 model Shelter {
   id               String        @id @default(cuid())
-  userId           String
-  user             User          @relation(fields: [userId], references: [id])
+  userId           String?
+  user             User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   name             String
   city             String
   district         String?
@@ -209,6 +209,9 @@ model Product {
   weightKg        Float?    // kargo hesabı için
   brand           String?
   tags            String[]  @default([])
+  sizes           String[]  @default([])
+  colors          String[]  @default([])
+  materials       String[]  @default([])
 
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
