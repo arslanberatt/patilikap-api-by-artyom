@@ -364,7 +364,7 @@ async function checkCampaignProgress(items: { campaignId: string; productId: str
 
     if (!shelter || !campaign) continue;
 
-    if (percent >= 50 && percent < 51) {
+    if (percent >= 50 && percent < 51 && shelter.userId) {
       await prisma.notification.create({
         data: {
           userId: shelter.userId,
@@ -382,7 +382,7 @@ async function checkCampaignProgress(items: { campaignId: string; productId: str
         data: { status: "COMPLETED" },
       });
 
-      await prisma.notification.create({
+      if (shelter.userId) await prisma.notification.create({
         data: {
           userId: shelter.userId,
           type: "CAMPAIGN_FULL",

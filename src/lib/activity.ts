@@ -20,6 +20,7 @@ export const activityMessages = {
   ORDER_CANCELLED:         (number: string) => `${number} numaralı bağış siparişi iptal edildi`,
   ORDER_CANCEL_REQUESTED:  (number: string) => `${number} numaralı bağış siparişi için iptal talebi gönderildi`,
   ORDER_CANCEL_APPROVED:   (number: string) => `${number} numaralı bağış siparişinin iptal talebi onaylandı`,
+  ORDER_DELETED:           (number: string) => `${number} numaralı bağış siparişi silindi`,
 
   // ─── MAĞAZA SİPARİŞİ ────────────────────────────────────────────────────────
   STORE_ORDER_PLACED:   (number: string) => `${number} numaralı sipariş oluşturuldu`,
@@ -28,6 +29,7 @@ export const activityMessages = {
   STORE_ORDER_DELIVERED:(number: string) => `${number} numaralı sipariş teslim edildi`,
   STORE_ORDER_CANCELLED:(number: string) => `${number} numaralı sipariş iptal edildi`,
   STORE_ORDER_REFUNDED: (number: string) => `${number} numaralı sipariş iade edildi`,
+  STORE_ORDER_DELETED:  (number: string) => `${number} numaralı mağaza siparişi silindi`,
 
   // ─── KULLANICI ──────────────────────────────────────────────────────────────
   USER_ROLE_CHANGED:    (name: string, role: string) => `${name} kullanıcısının rolü ${role} olarak değiştirildi`,

@@ -1122,6 +1122,31 @@ export async function approveStoreCancel(c: Context) {
     return c.json({ success: true });
 }
 
+export async function adminDeleteStoreOrder(c: Context) {
+    const admin = c.get("user") as { id: string; name: string };
+    const { id } = c.req.param();
+
+    const order = await prisma.storeOrder.findFirst({ where: { id } });
+    if (!order) return c.json(errors.NOT_FOUND, 404);
+
+    await prisma.storeOrder.delete({ where: { id } });
+
+    await prisma.activityLog.create({
+        data: {
+            actorId: admin.id,
+            actorName: admin.name,
+            actorType: "ADMIN",
+            action: "STORE_ORDER_DELETED",
+            targetType: "StoreOrder",
+            targetId: id,
+            targetName: order.orderNumber,
+            message: activityMessages.STORE_ORDER_DELETED(order.orderNumber),
+        },
+    });
+
+    return c.json({ success: true });
+}
+
 // ─── ADMIN — ÜRÜN CRUD ────────────────────────────────────────────────────────
 
 export async function adminGetAllProducts(c: Context) {

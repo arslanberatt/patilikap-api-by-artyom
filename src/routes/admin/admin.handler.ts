@@ -316,7 +316,10 @@ export async function getCategories(c: Context) {
   const categories = await prisma.category.findMany({
     orderBy: { sortOrder: "asc" },
     include: {
-      children: { orderBy: { sortOrder: "asc" } },
+      children: {
+        orderBy: { sortOrder: "asc" },
+        include: { _count: { select: { products: true } } },
+      },
       _count: { select: { products: true } },
     },
     where: { parentId: null }, // sadece ana kategoriler

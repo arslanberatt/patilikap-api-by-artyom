@@ -229,7 +229,7 @@ export async function approveStory(c: Context) {
   });
 
   // Shelter'a bildirim
-  await prisma.notification.create({
+  if (story.shelter.userId) await prisma.notification.create({
     data: {
       userId: story.shelter.userId,
       type: "NEW_STORY",
@@ -271,7 +271,7 @@ export async function rejectStory(c: Context) {
   });
 
   // Shelter'a bildirim
-  await prisma.notification.create({
+  if (story.shelter.userId) await prisma.notification.create({
     data: {
       userId: story.shelter.userId,
       type: "SYSTEM",

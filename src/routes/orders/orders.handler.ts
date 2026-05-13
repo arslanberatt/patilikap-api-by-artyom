@@ -453,7 +453,15 @@ export async function getAllOrders(c: Context) {
         receiptUrl: true,
         createdAt: true,
         user: { select: { id: true, name: true, email: true, phone: true } },
-        items: { select: { productName: true, quantity: true, unitPrice: true } },
+        items: {
+          select: {
+            id: true,
+            productName: true,
+            quantity: true,
+            unitPrice: true,
+            campaign: { select: { id: true, title: true, slug: true } },
+          },
+        },
       },
     }),
     prisma.order.count({ where }),
@@ -596,6 +604,32 @@ export async function approveCancel(c: Context) {
   return c.json(updated);
 }
 
+export async function adminDeleteOrder(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+
+  const order = await prisma.order.findFirst({ where: { id } });
+  if (!order) return c.json(errors.NOT_FOUND, 404);
+
+  await prisma.orderItem.deleteMany({ where: { orderId: id } });
+  await prisma.order.delete({ where: { id } });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "ORDER_DELETED",
+      targetType: "Order",
+      targetId: id,
+      targetName: order.orderNumber,
+      message: activityMessages.ORDER_DELETED(order.orderNumber),
+    },
+  });
+
+  return c.json({ success: true });
+}
+
 // ─── KAMPANYA PROGRESS KONTROLÜ ───────────────────────────────────────────────
 
 async function checkCampaignProgress(orderId: string) {
@@ -620,7 +654,7 @@ async function checkCampaignProgress(orderId: string) {
     if (!shelter || !campaign) continue;
 
     // %50 bildirimi
-    if (percent >= 50 && percent < 51) {
+    if (percent >= 50 && percent < 51 && shelter.userId) {
       await prisma.notification.create({
         data: {
           userId: shelter.userId,
@@ -639,7 +673,7 @@ async function checkCampaignProgress(orderId: string) {
         data: { status: "COMPLETED" },
       });
 
-      await prisma.notification.create({
+      if (shelter.userId) await prisma.notification.create({
         data: {
           userId: shelter.userId,
           type: "CAMPAIGN_FULL",

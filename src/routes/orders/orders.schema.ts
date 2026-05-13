@@ -29,5 +29,5 @@ export const adminOrdersQuery = paginationQuery.extend({
 });
 
 export const updateOrderStatusBody = z.object({
-  paymentStatus: z.enum(["PAID", "CANCELLED", "REFUNDED"]),
+  paymentStatus: z.enum(["WAITING_APPROVAL", "PAID", "CANCELLED", "REFUNDED"]),
 });

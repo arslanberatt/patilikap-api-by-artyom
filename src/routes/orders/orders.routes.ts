@@ -10,6 +10,7 @@ import {
   getAllOrders,
   updateOrderStatus,
   approveCancel,
+  adminDeleteOrder,
 } from "./orders.handler.js";
 import { zv } from "../../lib/zValidator.js";
 import { idParam } from "../../lib/zSchemas.js";
@@ -31,5 +32,6 @@ orders.post("/:id/cancel-request", requireAuth, zv("param", idParam), requestCan
 orders.get("/admin/all", requireAuth, requireRole("ADMIN"), zv("query", adminOrdersQuery), getAllOrders);
 orders.patch("/:id/status", requireAuth, requireRole("ADMIN"), zv("param", idParam), zv("json", updateOrderStatusBody), updateOrderStatus);
 orders.post("/:id/approve-cancel", requireAuth, requireRole("ADMIN"), zv("param", idParam), approveCancel);
+orders.delete("/admin/:id", requireAuth, requireRole("ADMIN"), zv("param", idParam), adminDeleteOrder);
 
 export default orders;

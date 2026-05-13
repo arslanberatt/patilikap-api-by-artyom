@@ -25,6 +25,7 @@ import {
   adminCreateProduct,
   adminUpdateProduct,
   adminDeleteProduct,
+  adminDeleteStoreOrder,
 } from "./store.handler.js";
 import { zv } from "../../lib/zValidator.js";
 import { idParam } from "../../lib/zSchemas.js";
@@ -75,6 +76,7 @@ store.get("/admin/orders", requireAuth, requireRole("ADMIN"), zv("query", adminS
 store.patch("/admin/orders/:id/status", requireAuth, requireRole("ADMIN"), zv("param", idParam), zv("json", updateStoreOrderStatusBody), updateStoreOrderStatus);
 store.post("/admin/orders/:id/ship", requireAuth, requireRole("ADMIN"), zv("param", idParam), zv("json", addShipmentBody), addShipment);
 store.post("/admin/orders/:id/approve-cancel", requireAuth, requireRole("ADMIN"), zv("param", idParam), approveStoreCancel);
+store.delete("/admin/orders/:id", requireAuth, requireRole("ADMIN"), zv("param", idParam), adminDeleteStoreOrder);
 
 // ─── ADMIN — KARGO ───────────────────────────────────────────────────────────
 store.get("/admin/shipments", requireAuth, requireRole("ADMIN"), zv("query", adminShipmentsQuery), adminListShipments);
