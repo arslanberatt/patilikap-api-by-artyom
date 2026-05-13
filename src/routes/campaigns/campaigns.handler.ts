@@ -505,7 +505,7 @@ export async function adminListCampaigns(c: Context) {
         endsAt: true,
         createdAt: true,
         shelter: { select: { id: true, name: true, city: true } },
-        _count: { select: { orders: true } },
+        _count: { select: { items: true } },
       },
     }),
     prisma.campaign.count({ where }),

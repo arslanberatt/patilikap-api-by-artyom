@@ -31,6 +31,7 @@ export const activityMessages = {
   // ─── KULLANICI ──────────────────────────────────────────────────────────────
   USER_ROLE_CHANGED:    (name: string, role: string) => `${name} kullanıcısının rolü ${role} olarak değiştirildi`,
   USER_BANNED:          (name: string) => `${name} kullanıcısı engellendi`,
+  USER_DELETED:         (name: string) => `${name} kullanıcısı silindi`,
 
   // ─── ÜRÜN ───────────────────────────────────────────────────────────────────
   PRODUCT_CREATED:      (name: string) => `${name} ürünü oluşturuldu`,
