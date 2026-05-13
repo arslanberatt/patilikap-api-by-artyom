@@ -57,13 +57,48 @@ export async function getStoreCategories(c: Context) {
         orderBy: { sortOrder: "asc" },
         select: {
             id: true, name: true, slug: true,
+            _count: { select: { products: { where: { showInStore: true, isActive: true } } } },
             children: {
                 orderBy: { sortOrder: "asc" },
-                select: { id: true, name: true, slug: true },
+                select: {
+                    id: true, name: true, slug: true,
+                    _count: { select: { products: { where: { showInStore: true, isActive: true } } } },
+                },
             },
         },
     });
-    return c.json(categories);
+    return c.json(categories.map((cat: any) => ({
+        id: cat.id,
+        name: cat.name,
+        slug: cat.slug,
+        count: cat._count.products,
+        children: cat.children.map((ch: any) => ({
+            id: ch.id,
+            name: ch.name,
+            slug: ch.slug,
+            count: ch._count.products,
+        })),
+    })));
+}
+
+export async function getStoreAttributeOptions(c: Context) {
+    const rows = await prisma.$queryRaw<{ key: string; value: string }[]>`
+        SELECT DISTINCT kv.key, kv.value
+        FROM "Product"
+        CROSS JOIN LATERAL jsonb_each_text("nutritionValues") kv
+        WHERE "showInStore" = true AND "isActive" = true
+          AND "nutritionValues" IS NOT NULL
+          AND kv.value IS NOT NULL
+          AND kv.value != ''
+        ORDER BY kv.key, kv.value
+    `;
+    const map = new Map<string, string[]>();
+    for (const { key, value } of rows) {
+        const arr = map.get(key) ?? [];
+        arr.push(value);
+        map.set(key, arr);
+    }
+    return c.json([...map.entries()].map(([key, values]) => ({ key, values })));
 }
 
 // ─── PUBLIC — ÜRÜNLER ─────────────────────────────────────────────────────────
@@ -71,18 +106,18 @@ export async function getStoreCategories(c: Context) {
 export async function getProducts(c: Context) {
     const query = c.req.query();
 
-    const categoryId = query.category;
-    const brand      = query.brand;
-    const minPrice   = query.minPrice ? Number(query.minPrice) : undefined;
-    const maxPrice   = query.maxPrice ? Number(query.maxPrice) : undefined;
-    const tag        = query.tag;
-    const search     = query.search?.trim();
-    const sortBy     = query.sortBy || "sortOrder";
-    const page       = Number(query.page) || 1;
-    const limit      = Number(query.limit) || 20;
-    const skip       = (page - 1) * limit;
+    const categoryId  = query.category;
+    const categoryIds = query.categories?.split(",").filter(Boolean) ?? [];
+    const brand       = query.brand;
+    const minPrice    = query.minPrice ? Number(query.minPrice) : undefined;
+    const maxPrice    = query.maxPrice ? Number(query.maxPrice) : undefined;
+    const tag         = query.tag;
+    const search      = query.search?.trim();
+    const sortBy      = query.sortBy || "sortOrder";
+    const page        = Number(query.page) || 1;
+    const limit       = Number(query.limit) || 20;
+    const skip        = (page - 1) * limit;
 
-    // Sıralama — arama varsa relevance yerine sortOrder kullanılır
     type OrderByOne = { price?: "asc" | "desc"; name?: "asc" | "desc"; createdAt?: "asc" | "desc"; sortOrder?: "asc" | "desc"; reviews?: { _count: "asc" | "desc" } };
     const orderBy: OrderByOne | OrderByOne[] = search
         ? { sortOrder: "asc" }
@@ -94,36 +129,55 @@ export async function getProducts(c: Context) {
         : sortBy === "most_reviewed"  ? [{ reviews: { _count: "desc" } }, { sortOrder: "asc" }]
         :                               { sortOrder: "asc" };
 
-    // Arama — her kelime ayrı ayrı eşleştirilir (AND mantığı)
-    // "köpek maması" → "köpek" VE "maması" içeren ürünler gelir
-    // Kısmi eşleşme: "mama" → "maması", "mamalar" vb. çıkar
-    const searchFilter = search
-        ? {
-            AND: search.split(/\s+/).filter(Boolean).map((word) => ({
+    // Kategori — categories (çoklu, virgülle) veya category (tekli) desteklenir
+    const activeCategoryIds = categoryIds.length > 0 ? categoryIds : (categoryId ? [categoryId] : []);
+
+    // Parent seçilince tüm alt kategoriler de dahil edilir (OR mantığı)
+    let expandedCatIds: string[] = [...activeCategoryIds];
+    if (activeCategoryIds.length > 0) {
+        const childCats = await prisma.category.findMany({
+            where: { parentId: { in: activeCategoryIds } },
+            select: { id: true },
+        });
+        childCats.forEach((ch: any) => expandedCatIds.push(ch.id));
+    }
+
+    // Attribute filtreleri — "Renk:Kırmızı,Materyal:Krom" formatı
+    const attrFilters = (query.attrs ?? "")
+        .split(",").filter(Boolean)
+        .map((s) => { const i = s.indexOf(":"); return { key: s.slice(0, i), value: s.slice(i + 1) }; })
+        .filter((f) => f.key && f.value);
+
+    // AND koşulları — arama kelimeleri + attribute filtreleri
+    const andConditions: any[] = [];
+    if (search) {
+        search.split(/\s+/).filter(Boolean).forEach((word) => {
+            andConditions.push({
                 OR: [
-                    { name:        { contains: word, mode: "insensitive" as const } },
-                    { brand:       { contains: word, mode: "insensitive" as const } },
-                    { description: { contains: word, mode: "insensitive" as const } },
+                    { name:        { contains: word, mode: "insensitive" } },
+                    { brand:       { contains: word, mode: "insensitive" } },
+                    { description: { contains: word, mode: "insensitive" } },
                     { tags:        { hasSome: [word.toLowerCase()] } },
                 ],
-            })),
-          }
-        : {};
+            });
+        });
+    }
+    attrFilters.forEach(({ key, value }) => {
+        andConditions.push({ nutritionValues: { path: [key], equals: value } });
+    });
 
-    const where = {
-        showInStore: true,
-        isActive: true,
-        ...(categoryId && { categoryId }),
-        ...(brand && { brand }),
-        ...(tag && { tags: { has: tag } }),
-        ...((minPrice !== undefined || maxPrice !== undefined) && {
-            price: {
-                ...(minPrice !== undefined && { gte: minPrice }),
-                ...(maxPrice !== undefined && { lte: maxPrice }),
-            },
-        }),
-        ...searchFilter,
-    };
+    // where nesnesini aşamalı olarak oluştur — tip çıkarımını korur
+    const where: any = { showInStore: true, isActive: true };
+    if (expandedCatIds.length > 0) where.categoryId = { in: expandedCatIds };
+    if (brand) where.brand = brand;
+    if (tag) where.tags = { has: tag };
+    if (minPrice !== undefined || maxPrice !== undefined) {
+        where.price = {
+            ...(minPrice !== undefined ? { gte: minPrice } : {}),
+            ...(maxPrice !== undefined ? { lte: maxPrice } : {}),
+        };
+    }
+    if (andConditions.length > 0) where.AND = andConditions;
 
     const [products, total] = await Promise.all([
         prisma.product.findMany({
@@ -143,24 +197,22 @@ export async function getProducts(c: Context) {
                 weightKg: true,
                 brand: true,
                 tags: true,
-                category: {
-                    select: { id: true, name: true, slug: true },
-                },
+                category: { select: { id: true, name: true, slug: true } },
                 _count: { select: { reviews: true } },
             },
         }),
         prisma.product.count({ where }),
     ]);
 
-    const productIds = products.map(p => p.id);
+    const productIds = products.map((p: any) => p.id as string);
     const avgRatings = await prisma.productReview.groupBy({
         by: ["productId"],
         where: { productId: { in: productIds }, isApproved: true },
         _avg: { rating: true },
     });
-    const avgMap = new Map(avgRatings.map(r => [r.productId, r._avg.rating]));
+    const avgMap = new Map(avgRatings.map((r: any) => [r.productId as string, r._avg.rating as number | null]));
 
-    const enriched = products.map(({ _count, ...p }) => ({
+    const enriched = products.map(({ _count, ...p }: any) => ({
         ...p,
         reviewCount: _count.reviews,
         avgRating: avgMap.get(p.id) ?? null,
@@ -168,12 +220,7 @@ export async function getProducts(c: Context) {
 
     return c.json({
         products: enriched,
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit),
-        },
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
 }
 

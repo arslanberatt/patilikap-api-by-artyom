@@ -3,13 +3,15 @@ import { paginationQuery, PaymentMethodEnum } from "../../lib/zSchemas.js";
 
 // ─── ÜRÜN LİSTE QUERY ────────────────────────────────────────────────────────
 export const productsListQuery = paginationQuery.extend({
-  category: z.string().optional(),
-  brand:    z.string().optional(),
-  minPrice: z.coerce.number().min(0).optional(),
-  maxPrice: z.coerce.number().min(0).optional(),
-  tag:      z.string().optional(),
-  search:   z.string().max(100).optional(),
-  sortBy:   z.enum(["sortOrder", "price_asc", "price_desc", "a_z", "z_a", "newest", "most_reviewed"]).optional(),
+  category:   z.string().optional(),
+  categories: z.string().optional(),
+  attrs:      z.string().optional(),
+  brand:      z.string().optional(),
+  minPrice:   z.coerce.number().min(0).optional(),
+  maxPrice:   z.coerce.number().min(0).optional(),
+  tag:        z.string().optional(),
+  search:     z.string().max(100).optional(),
+  sortBy:     z.enum(["sortOrder", "price_asc", "price_desc", "a_z", "z_a", "newest", "most_reviewed"]).optional(),
 });
 
 export const reviewsListQuery = paginationQuery;
