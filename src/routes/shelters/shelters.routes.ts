@@ -9,6 +9,7 @@ import {
   deactivateShelter,
   approveShelter,
   rejectShelter,
+  deleteShelter,
 } from "./shelters.handler.js";
 import { zv } from "../../lib/zValidator.js";
 import { idParam } from "../../lib/zSchemas.js";
@@ -29,5 +30,6 @@ shelters.post("/:id/deactivate", requireAuth, requireRole("SHELTER"), zv("param"
 shelters.get("/admin/all", requireAuth, requireRole("ADMIN"), zv("query", adminSheltersListQuery), getAdminShelters);
 shelters.post("/:id/approve", requireAuth, requireRole("ADMIN"), zv("param", idParam), approveShelter);
 shelters.post("/:id/reject", requireAuth, requireRole("ADMIN"), zv("param", idParam), rejectShelter);
+shelters.delete("/:id", requireAuth, requireRole("ADMIN"), zv("param", idParam), deleteShelter);
 
 export default shelters;

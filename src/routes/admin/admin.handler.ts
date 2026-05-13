@@ -780,6 +780,54 @@ export async function getDashboardStats(c: Context) {
   });
 }
 
+// ─── GLOBAL ARAMA ─────────────────────────────────────────────────────────────
+
+export async function adminSearch(c: Context) {
+  const q = (c.req.query("q") ?? "").trim();
+  if (q.length < 2) return c.json({ users: [], shelters: [], campaigns: [] });
+
+  const term = q.slice(0, 100);
+
+  const [users, shelters, campaigns] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        OR: [
+          { name: { contains: term, mode: "insensitive" } },
+          { email: { contains: term, mode: "insensitive" } },
+        ],
+      },
+      take: 5,
+      select: { id: true, name: true, email: true, role: true },
+    }),
+    prisma.shelter.findMany({
+      where: {
+        status: "APPROVED",
+        OR: [
+          { name: { contains: term, mode: "insensitive" } },
+          { city: { contains: term, mode: "insensitive" } },
+        ],
+      },
+      take: 5,
+      select: { id: true, name: true, city: true, status: true },
+    }),
+    prisma.campaign.findMany({
+      where: {
+        status: "ACTIVE",
+        title: { contains: term, mode: "insensitive" },
+      },
+      take: 5,
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        shelter: { select: { name: true } },
+      },
+    }),
+  ]);
+
+  return c.json({ users, shelters, campaigns });
+}
+
 // ─── GELİR SERİSİ (CHART) ─────────────────────────────────────────────────────
 
 export async function getRevenueSeries(c: Context) {

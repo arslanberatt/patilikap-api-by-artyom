@@ -274,7 +274,7 @@ export async function approveShelter(c: Context) {
     },
   });
 
-  await prisma.notification.create({
+  if (shelter.userId) await prisma.notification.create({
     data: {
       userId: shelter.userId,
       type: "SHELTER_APPROVED",
@@ -316,7 +316,7 @@ export async function rejectShelter(c: Context) {
     },
   });
 
-  await prisma.notification.create({
+  if (shelter.userId) await prisma.notification.create({
     data: {
       userId: shelter.userId,
       type: "SHELTER_REJECTED",
@@ -327,6 +327,46 @@ export async function rejectShelter(c: Context) {
   });
 
   return c.json(updated);
+}
+
+export async function deleteShelter(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+
+  const shelter = await prisma.shelter.findFirst({ where: { id } });
+  if (!shelter) return c.json(errors.NOT_FOUND, 404);
+
+  // Cascade manual: Campaign → Shelter ilişkisi RESTRICT varsayılan
+  // Önce kampanyalara ait alt kayıtları, sonra kampanyaları, sonra barınağı sil
+  const campaigns = await prisma.campaign.findMany({
+    where: { shelterId: id },
+    select: { id: true },
+  });
+  const campaignIds = campaigns.map(c => c.id);
+
+  if (campaignIds.length > 0) {
+    await prisma.shelterStory.deleteMany({ where: { campaignId: { in: campaignIds } } });
+    await prisma.orderItem.deleteMany({ where: { campaignId: { in: campaignIds } } });
+    await prisma.campaignProduct.deleteMany({ where: { campaignId: { in: campaignIds } } });
+    await prisma.campaign.deleteMany({ where: { id: { in: campaignIds } } });
+  }
+  await prisma.shelterStory.deleteMany({ where: { shelterId: id } });
+  await prisma.shelter.delete({ where: { id } });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "SHELTER_DELETED",
+      targetType: "Shelter",
+      targetId: id,
+      targetName: shelter.name,
+      message: activityMessages.SHELTER_DELETED(shelter.name),
+    },
+  });
+
+  return c.json({ success: true });
 }
 
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ export const activityMessages = {
   SHELTER_APPROVED:     (name: string) => `${name} barınağı onaylandı`,
   SHELTER_REJECTED:     (name: string) => `${name} barınağı reddedildi`,
   SHELTER_DEACTIVATED:  (name: string) => `${name} barınağı pasife alındı`,
+  SHELTER_DELETED:      (name: string) => `${name} barınağı silindi`,
 
   // ─── KAMPANYA ───────────────────────────────────────────────────────────────
   CAMPAIGN_CREATED:     (name: string) => `${name} kampanyası oluşturuldu`,

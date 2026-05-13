@@ -43,6 +43,7 @@ import {
   getActivityLogs,
   getDashboardStats,
   getRevenueSeries,
+  adminSearch,
   // Yorumlar
   adminGetReviews,
   adminApproveReview,
@@ -77,6 +78,7 @@ admin.use("*", requireAuth, requireRole("ADMIN"));
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 admin.get("/dashboard", getDashboardStats);
 admin.get("/dashboard/revenue-series", getRevenueSeries);
+admin.get("/search", adminSearch);
 
 // ─── KULLANICI ────────────────────────────────────────────────────────────────
 admin.get("/users", zv("query", usersListQuery), getUsers);
