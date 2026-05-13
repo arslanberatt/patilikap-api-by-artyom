@@ -466,3 +466,53 @@ export async function removeCampaignProduct(c: Context) {
 
   return c.json({ success: true });
 }
+
+// ─── ADMIN — TÜM KAMPANYALAR ──────────────────────────────────────────────────
+
+export async function adminListCampaigns(c: Context) {
+  const query = c.req.query();
+  const page  = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+  const skip  = (page - 1) * limit;
+  const search     = query.search?.trim();
+  const isFeatured = query.isFeatured === "true" ? true : query.isFeatured === "false" ? false : undefined;
+
+  const where: any = {
+    ...(isFeatured !== undefined && { isFeatured }),
+    ...(search && {
+      OR: [
+        { title: { contains: search, mode: "insensitive" } },
+        { shelter: { name: { contains: search, mode: "insensitive" } } },
+      ],
+    }),
+  };
+
+  const [campaigns, total] = await Promise.all([
+    prisma.campaign.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        status: true,
+        isActive: true,
+        isFeatured: true,
+        targetAmount: true,
+        currentAmount: true,
+        endsAt: true,
+        createdAt: true,
+        shelter: { select: { id: true, name: true, city: true } },
+        _count: { select: { orders: true } },
+      },
+    }),
+    prisma.campaign.count({ where }),
+  ]);
+
+  return c.json({
+    campaigns,
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
+}

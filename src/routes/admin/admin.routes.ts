@@ -5,6 +5,7 @@ import {
   getUsers,
   getUserById,
   updateUserRole,
+  deleteUser,
   // Sistem ayarları
   getSystemConfig,
   updateSystemConfig,
@@ -41,6 +42,7 @@ import {
   // Log & Dashboard
   getActivityLogs,
   getDashboardStats,
+  getRevenueSeries,
   // Yorumlar
   adminGetReviews,
   adminApproveReview,
@@ -74,11 +76,13 @@ admin.use("*", requireAuth, requireRole("ADMIN"));
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 admin.get("/dashboard", getDashboardStats);
+admin.get("/dashboard/revenue-series", getRevenueSeries);
 
 // ─── KULLANICI ────────────────────────────────────────────────────────────────
 admin.get("/users", zv("query", usersListQuery), getUsers);
 admin.get("/users/:id", zv("param", idParam), getUserById);
 admin.patch("/users/:id/role", zv("param", idParam), zv("json", updateUserRoleBody), updateUserRole);
+admin.delete("/users/:id", zv("param", idParam), deleteUser);
 
 // ─── SİSTEM AYARLARI ──────────────────────────────────────────────────────────
 admin.get("/config", getSystemConfig);

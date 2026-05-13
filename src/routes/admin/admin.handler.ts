@@ -104,6 +104,71 @@ export async function updateUserRole(c: Context) {
   return c.json(updated);
 }
 
+export async function deleteUser(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+
+  const user = await prisma.user.findFirst({ where: { id } });
+  if (!user) return c.json(errors.NOT_FOUND, 404);
+  if (user.role === "ADMIN") return c.json({ error: "Admin kullanıcı silinemez" }, 403);
+  if (user.id === admin.id) return c.json({ error: "Kendi hesabınızı silemezsiniz" }, 403);
+
+  const displayName = user.name ?? user.email;
+
+  await prisma.$transaction(async tx => {
+    // Bağışlar (Order) anonimleştirme
+    await tx.order.updateMany({
+      where: { userId: id },
+      data: {
+        userId: null,
+        guestName: user.name,
+        guestEmail: user.email,
+        guestPhone: user.phone,
+      },
+    });
+
+    // Mağaza siparişleri (StoreOrder) anonimleştirme
+    await tx.storeOrder.updateMany({
+      where: { userId: id },
+      data: {
+        userId: null,
+        guestName: user.name,
+        guestEmail: user.email,
+        guestPhone: user.phone,
+      },
+    });
+
+    // CouponUsage anonimleştirme
+    await tx.couponUsage.updateMany({
+      where: { userId: id },
+      data: { userId: null },
+    });
+
+    // ProductReview — bu kullanıcının yorumlarını sil (User ilişkisi NOT NULL)
+    await tx.productReview.deleteMany({ where: { userId: id } });
+
+    // User'ı sil. Shelter.userId → SetNull (migration sayesinde),
+    // UserAddress, Notification, Session, Account → Cascade.
+    await tx.user.delete({ where: { id } });
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "USER_DELETED",
+      targetType: "User",
+      targetId: id,
+      targetName: displayName,
+      message: activityMessages.USER_DELETED(displayName),
+      metadata: { deletedUser: { id, email: user.email, role: user.role } },
+    },
+  });
+
+  return c.json({ success: true });
+}
+
 // ─── SİSTEM AYARLARI ──────────────────────────────────────────────────────────
 
 export async function getSystemConfig(c: Context) {
@@ -713,4 +778,44 @@ export async function getDashboardStats(c: Context) {
       store: Number(storeRevenue._sum.totalAmount || 0),
     },
   });
+}
+
+// ─── GELİR SERİSİ (CHART) ─────────────────────────────────────────────────────
+
+export async function getRevenueSeries(c: Context) {
+  const days = Math.min(90, Math.max(7, Number(c.req.query("days")) || 14));
+  const since = new Date();
+  since.setDate(since.getDate() - days + 1);
+  since.setHours(0, 0, 0, 0);
+
+  const [orders, storeOrders] = await Promise.all([
+    prisma.order.findMany({
+      where: { paymentStatus: "PAID", createdAt: { gte: since } },
+      select: { createdAt: true, totalAmount: true },
+    }),
+    prisma.storeOrder.findMany({
+      where: { paymentStatus: "PAID", createdAt: { gte: since } },
+      select: { createdAt: true, totalAmount: true },
+    }),
+  ]);
+
+  // Build a map keyed by ISO date string (YYYY-MM-DD)
+  const map: Record<string, { orders: number; store: number }> = {};
+  for (let i = 0; i < days; i++) {
+    const d = new Date(since);
+    d.setDate(d.getDate() + i);
+    map[d.toISOString().slice(0, 10)] = { orders: 0, store: 0 };
+  }
+
+  for (const o of orders) {
+    const key = o.createdAt.toISOString().slice(0, 10);
+    if (map[key]) map[key].orders += Number(o.totalAmount);
+  }
+  for (const o of storeOrders) {
+    const key = o.createdAt.toISOString().slice(0, 10);
+    if (map[key]) map[key].store += Number(o.totalAmount);
+  }
+
+  const series = Object.entries(map).map(([date, v]) => ({ date, orders: v.orders, store: v.store }));
+  return c.json({ series });
 }
