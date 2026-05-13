@@ -46,7 +46,7 @@ export const adminStoreOrdersQuery = paginationQuery.extend({
 });
 
 export const updateStoreOrderStatusBody = z.object({
-  orderStatus: z.enum(["CONFIRMED", "PREPARING", "READY_TO_SHIP", "SHIPPED", "DELIVERED", "CANCELLED"]),
+  orderStatus: z.enum(["CONFIRMED", "PREPARING", "READY_TO_SHIP", "SHIPPED", "DELIVERED", "CANCELLED", "REFUNDED"]),
   note: z.string().max(500).optional(),
 });
 
@@ -55,6 +55,20 @@ export const addShipmentBody = z.object({
   trackingNumber: z.string().min(1).max(100),
   trackingUrl:    z.string().url().optional(),
   estimatedAt:    z.string().optional(),
+});
+
+// ─── ADMIN — KARGO LİSTESİ ────────────────────────────────────────────────────
+export const adminShipmentsQuery = paginationQuery.extend({
+  status: z.enum(["PENDING", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "RETURNED"]).optional(),
+  search: z.string().max(100).optional(),
+});
+
+export const updateShipmentBody = z.object({
+  provider:       z.string().min(1).max(100).optional(),
+  trackingNumber: z.string().min(1).max(100).optional(),
+  trackingUrl:    z.string().url().optional().nullable(),
+  status:         z.enum(["PENDING", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "RETURNED"]).optional(),
+  estimatedAt:    z.string().optional().nullable(),
 });
 
 // ─── YORUM ───────────────────────────────────────────────────────────────────

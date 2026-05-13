@@ -19,6 +19,8 @@ import {
   updateStoreOrderStatus,
   addShipment,
   approveStoreCancel,
+  adminListShipments,
+  adminUpdateShipment,
   adminGetAllProducts,
   adminCreateProduct,
   adminUpdateProduct,
@@ -34,6 +36,8 @@ import {
   adminStoreOrdersQuery,
   updateStoreOrderStatusBody,
   addShipmentBody,
+  adminShipmentsQuery,
+  updateShipmentBody,
   addReviewBody,
   stockAlertBody,
   adminCreateProductBody,
@@ -71,6 +75,10 @@ store.get("/admin/orders", requireAuth, requireRole("ADMIN"), zv("query", adminS
 store.patch("/admin/orders/:id/status", requireAuth, requireRole("ADMIN"), zv("param", idParam), zv("json", updateStoreOrderStatusBody), updateStoreOrderStatus);
 store.post("/admin/orders/:id/ship", requireAuth, requireRole("ADMIN"), zv("param", idParam), zv("json", addShipmentBody), addShipment);
 store.post("/admin/orders/:id/approve-cancel", requireAuth, requireRole("ADMIN"), zv("param", idParam), approveStoreCancel);
+
+// ─── ADMIN — KARGO ───────────────────────────────────────────────────────────
+store.get("/admin/shipments", requireAuth, requireRole("ADMIN"), zv("query", adminShipmentsQuery), adminListShipments);
+store.patch("/admin/shipments/:id", requireAuth, requireRole("ADMIN"), zv("param", idParam), zv("json", updateShipmentBody), adminUpdateShipment);
 
 // ─── ADMIN — ÜRÜN ────────────────────────────────────────────────────────────
 store.get("/admin/products", requireAuth, requireRole("ADMIN"), adminGetAllProducts);

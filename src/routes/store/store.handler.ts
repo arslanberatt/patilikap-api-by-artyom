@@ -880,7 +880,7 @@ export async function updateStoreOrderStatus(c: Context) {
     if (!order) return c.json(errors.NOT_FOUND, 404);
 
     const body = await c.req.json() as {
-        orderStatus: "CONFIRMED" | "PREPARING" | "READY_TO_SHIP" | "SHIPPED" | "DELIVERED" | "CANCELLED";
+        orderStatus: "CONFIRMED" | "PREPARING" | "READY_TO_SHIP" | "SHIPPED" | "DELIVERED" | "CANCELLED" | "REFUNDED";
         note?: string;
     };
 
@@ -890,6 +890,7 @@ export async function updateStoreOrderStatus(c: Context) {
             orderStatus: body.orderStatus,
             isAdminRead: true,
             ...(body.orderStatus === "CONFIRMED" && { paymentStatus: "PAID" }),
+            ...(body.orderStatus === "REFUNDED" && { paymentStatus: "REFUNDED" }),
         },
     });
 
@@ -920,6 +921,18 @@ export async function updateStoreOrderStatus(c: Context) {
                 type: "ORDER_STATUS",
                 title: "Siparişiniz İptal Edildi",
                 message: `${order.orderNumber} numaralı siparişiniz iptal edildi`,
+                link: `/orders/store/${order.id}`,
+            },
+        });
+    }
+
+    if (body.orderStatus === "REFUNDED" && order.userId) {
+        await prisma.notification.create({
+            data: {
+                userId: order.userId,
+                type: "ORDER_STATUS",
+                title: "Siparişiniz İade Edildi",
+                message: `${order.orderNumber} numaralı siparişiniz iade edildi`,
                 link: `/orders/store/${order.id}`,
             },
         });
@@ -1458,4 +1471,132 @@ async function triggerStockAlerts(productId: string, productName: string) {
             data: { notified: true, notifiedAt: new Date() },
         });
     }
+}
+
+// ─── ADMIN — KARGO LİSTESİ ────────────────────────────────────────────────────
+
+export async function adminListShipments(c: Context) {
+    const query = c.req.query();
+    const page  = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const status = query.status as string | undefined;
+    const search = query.search?.trim();
+
+    const where: any = {
+        ...(status && { status }),
+        ...(search && {
+            OR: [
+                { trackingNumber: { contains: search, mode: "insensitive" } },
+                { provider:       { contains: search, mode: "insensitive" } },
+                { storeOrder: { orderNumber: { contains: search, mode: "insensitive" } } },
+                { storeOrder: { guestEmail:  { contains: search, mode: "insensitive" } } },
+                { storeOrder: { user: { email: { contains: search, mode: "insensitive" } } } },
+            ],
+        }),
+    };
+
+    const [shipments, total] = await Promise.all([
+        prisma.shipment.findMany({
+            where,
+            orderBy: { updatedAt: "desc" },
+            skip,
+            take: limit,
+            include: {
+                storeOrder: {
+                    select: {
+                        id: true,
+                        orderNumber: true,
+                        guestName: true,
+                        guestEmail: true,
+                        user: { select: { id: true, name: true, email: true } },
+                    },
+                },
+            },
+        }),
+        prisma.shipment.count({ where }),
+    ]);
+
+    return c.json({
+        shipments,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
+}
+
+export async function adminUpdateShipment(c: Context) {
+    const admin = c.get("user") as { id: string; name: string };
+    const { id } = c.req.param();
+
+    const existing = await prisma.shipment.findFirst({
+        where: { id },
+        include: { storeOrder: { include: { user: true } } },
+    });
+    if (!existing) return c.json(errors.NOT_FOUND, 404);
+
+    const body = await c.req.json() as {
+        provider?: string;
+        trackingNumber?: string;
+        trackingUrl?: string | null;
+        status?: "PENDING" | "IN_TRANSIT" | "OUT_FOR_DELIVERY" | "DELIVERED" | "RETURNED";
+        estimatedAt?: string | null;
+    };
+
+    const updated = await prisma.shipment.update({
+        where: { id },
+        data: {
+            ...(body.provider       !== undefined && { provider: body.provider }),
+            ...(body.trackingNumber !== undefined && { trackingNumber: body.trackingNumber }),
+            ...(body.trackingUrl    !== undefined && { trackingUrl: body.trackingUrl }),
+            ...(body.status         !== undefined && { status: body.status }),
+            ...(body.estimatedAt    !== undefined && {
+                estimatedAt: body.estimatedAt ? new Date(body.estimatedAt) : null,
+            }),
+            ...(body.status === "DELIVERED" && { deliveredAt: new Date() }),
+        },
+    });
+
+    // Sipariş durumu senkronizasyonu
+    const order = existing.storeOrder;
+    if (body.status === "DELIVERED" && order.orderStatus !== "DELIVERED") {
+        await prisma.storeOrder.update({
+            where: { id: order.id },
+            data: { orderStatus: "DELIVERED" },
+        });
+        await prisma.orderStatusLog.create({
+            data: {
+                orderId: order.id,
+                fromStatus: order.orderStatus,
+                toStatus: "DELIVERED",
+                note: "Kargo teslim edildi",
+                changedBy: admin.id,
+            },
+        });
+        if (order.userId) {
+            await prisma.notification.create({
+                data: {
+                    userId: order.userId,
+                    type: "ORDER_STATUS",
+                    title: "Siparişiniz Teslim Edildi ✅",
+                    message: `${order.orderNumber} numaralı siparişiniz teslim edildi`,
+                    link: `/orders/store/${order.id}`,
+                },
+            });
+        }
+    }
+
+    await prisma.activityLog.create({
+        data: {
+            actorId: admin.id,
+            actorName: admin.name,
+            actorType: "ADMIN",
+            action: "SHIPMENT_UPDATED",
+            targetType: "Shipment",
+            targetId: updated.id,
+            targetName: updated.trackingNumber,
+            message: `${order.orderNumber} kargo bilgisi güncellendi`,
+        },
+    });
+
+    return c.json(updated);
 }
