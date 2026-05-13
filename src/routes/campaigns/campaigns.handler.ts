@@ -498,7 +498,6 @@ export async function adminListCampaigns(c: Context) {
         slug: true,
         title: true,
         status: true,
-        isActive: true,
         isFeatured: true,
         targetAmount: true,
         currentAmount: true,
