@@ -56,12 +56,12 @@ export async function getStoreCategories(c: Context) {
         where: { parentId: null },
         orderBy: { sortOrder: "asc" },
         select: {
-            id: true, name: true, slug: true,
+            id: true, name: true, slug: true, imageUrl: true,
             _count: { select: { products: { where: { showInStore: true, isActive: true } } } },
             children: {
                 orderBy: { sortOrder: "asc" },
                 select: {
-                    id: true, name: true, slug: true,
+                    id: true, name: true, slug: true, imageUrl: true,
                     _count: { select: { products: { where: { showInStore: true, isActive: true } } } },
                 },
             },
@@ -71,11 +71,13 @@ export async function getStoreCategories(c: Context) {
         id: cat.id,
         name: cat.name,
         slug: cat.slug,
+        imageUrl: cat.imageUrl,
         count: cat._count.products,
         children: cat.children.map((ch: any) => ({
             id: ch.id,
             name: ch.name,
             slug: ch.slug,
+            imageUrl: ch.imageUrl,
             count: ch._count.products,
         })),
     })));
