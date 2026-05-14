@@ -7,7 +7,8 @@ export type ImageFolder =
     | "stories"     // hikaye medyaları
     | "documents"   // barınak belgeleri (PDF)
     | "avatars"     // kullanıcı profil fotoğrafları
-    | "store";      // mağaza ürün resimleri
+    | "store"       // mağaza ürün resimleri
+    | "categories"; // kategori görselleri
 
 interface UploadResult {
     success: boolean;

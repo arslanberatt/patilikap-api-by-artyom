@@ -84,23 +84,38 @@ export async function getStoreCategories(c: Context) {
 }
 
 export async function getStoreAttributeOptions(c: Context) {
-    const rows = await prisma.$queryRaw<{ key: string; value: string }[]>`
-        SELECT DISTINCT kv.key, kv.value
-        FROM "Product"
-        CROSS JOIN LATERAL jsonb_each_text("nutritionValues") kv
-        WHERE "showInStore" = true AND "isActive" = true
-          AND "nutritionValues" IS NOT NULL
-          AND kv.value IS NOT NULL
-          AND kv.value != ''
-        ORDER BY kv.key, kv.value
-    `;
+    const [rows, variantProducts] = await Promise.all([
+        prisma.$queryRaw<{ key: string; value: string }[]>`
+            SELECT DISTINCT kv.key, kv.value
+            FROM "Product"
+            CROSS JOIN LATERAL jsonb_each_text("nutritionValues") kv
+            WHERE "showInStore" = true AND "isActive" = true
+              AND "nutritionValues" IS NOT NULL
+              AND kv.value IS NOT NULL
+              AND kv.value != ''
+            ORDER BY kv.key, kv.value
+        `,
+        prisma.product.findMany({
+            where: { showInStore: true, isActive: true },
+            select: { sizes: true, colors: true, materials: true },
+        }),
+    ]);
+
     const map = new Map<string, string[]>();
     for (const { key, value } of rows) {
         const arr = map.get(key) ?? [];
         arr.push(value);
         map.set(key, arr);
     }
-    return c.json([...map.entries()].map(([key, values]) => ({ key, values })));
+
+    const sizes     = [...new Set(variantProducts.flatMap((p: any) => p.sizes as string[]))].sort();
+    const colors    = [...new Set(variantProducts.flatMap((p: any) => p.colors as string[]))].sort();
+    const materials = [...new Set(variantProducts.flatMap((p: any) => p.materials as string[]))].sort();
+
+    return c.json({
+        variants: { sizes, colors, materials },
+        nutrition: [...map.entries()].map(([key, values]) => ({ key, values })),
+    });
 }
 
 // ─── PUBLIC — ÜRÜNLER ─────────────────────────────────────────────────────────
@@ -114,6 +129,9 @@ export async function getProducts(c: Context) {
     const minPrice    = query.minPrice ? Number(query.minPrice) : undefined;
     const maxPrice    = query.maxPrice ? Number(query.maxPrice) : undefined;
     const tag         = query.tag;
+    const sizes       = query.sizes?.split(",").filter(Boolean) ?? [];
+    const colors      = query.colors?.split(",").filter(Boolean) ?? [];
+    const materials   = query.materials?.split(",").filter(Boolean) ?? [];
     const search      = query.search?.trim();
     const sortBy      = query.sortBy || "sortOrder";
     const page        = Number(query.page) || 1;
@@ -173,6 +191,9 @@ export async function getProducts(c: Context) {
     if (expandedCatIds.length > 0) where.categoryId = { in: expandedCatIds };
     if (brand) where.brand = brand;
     if (tag) where.tags = { has: tag };
+    if (sizes.length)     where.sizes     = { hasSome: sizes };
+    if (colors.length)    where.colors    = { hasSome: colors };
+    if (materials.length) where.materials = { hasSome: materials };
     if (minPrice !== undefined || maxPrice !== undefined) {
         where.price = {
             ...(minPrice !== undefined ? { gte: minPrice } : {}),
@@ -244,6 +265,9 @@ export async function getProductBySlug(c: Context) {
             weightKg: true,
             brand: true,
             tags: true,
+            sizes: true,
+            colors: true,
+            materials: true,
             productionDate: true,
             expiryDate: true,
             nutritionValues: true,
