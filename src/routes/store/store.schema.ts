@@ -94,7 +94,7 @@ const productBase = z.object({
   imageUrl:          z.string().url().optional(),
   galleryImageUrls:  z.array(z.string().url()).optional(),
   price:             z.number().min(0),
-  comparePrice:      z.number().min(0).optional(),
+  comparePrice:      z.number().min(0).nullish(),
   stock:             z.number().int().min(0).optional(),
   trackStock:        z.boolean().optional(),
   showInStore:       z.boolean().optional(),
