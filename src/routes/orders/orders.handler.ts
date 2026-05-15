@@ -211,6 +211,7 @@ export async function createOrder(c: Context) {
       guestCity: body.city || null,
       totalAmount,
       paymentMethod: body.paymentMethod,
+      paymentStatus: body.paymentMethod === "PAYTR" ? "PENDING_PAYMENT" : "WAITING_APPROVAL",
       receiptUrl: body.receiptUrl,
       cancelToken,
       cancelTokenExpiresAt,
@@ -475,7 +476,8 @@ export async function getAllOrders(c: Context) {
   const dateTo         = query.dateTo   ? new Date(query.dateTo)   : undefined;
 
   const where: any = {
-    ...(paymentStatus  && { paymentStatus }),
+    // PAYTR siparişleri callback gelene kadar admin'e düşmesin
+    ...(paymentStatus ? { paymentStatus } : { paymentStatus: { not: "PENDING_PAYMENT" } }),
     ...(paymentMethod  && { paymentMethod }),
     ...(cancelRequest  !== undefined && { cancelRequest }),
     ...(dateFrom || dateTo) && {

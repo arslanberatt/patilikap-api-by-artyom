@@ -343,6 +343,7 @@ model OrderItem {
 
 enum PaymentStatus {
   WAITING_APPROVAL
+  PENDING_PAYMENT
   PAID
   CANCELLED
   REFUNDED

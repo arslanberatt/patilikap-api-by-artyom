@@ -510,6 +510,7 @@ export async function createStoreOrder(c: Context) {
             shippingFee,
             totalAmount,
             paymentMethod: body.paymentMethod as any,
+            paymentStatus: body.paymentMethod === "PAYTR" ? "PENDING_PAYMENT" : "WAITING_APPROVAL",
             receiptUrl: body.receiptUrl,
             couponId: coupon?.id,
             couponCode: body.couponCode,
@@ -898,7 +899,8 @@ export async function getAllStoreOrders(c: Context) {
     const dateTo        = query.dateTo   ? new Date(query.dateTo)   : undefined;
 
     const where: any = {
-        ...(paymentStatus  && { paymentStatus }),
+        // PAYTR siparişleri callback gelene kadar admin'e düşmesin
+        ...(paymentStatus ? { paymentStatus } : { paymentStatus: { not: "PENDING_PAYMENT" } }),
         ...(orderStatus    && { orderStatus }),
         ...(paymentMethod  && { paymentMethod }),
         ...(cancelRequest  !== undefined && { cancelRequest }),

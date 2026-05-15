@@ -192,7 +192,7 @@ async function handleDonationCallback(orderNumber: string, status: string) {
   if (!order) return;
 
   // Idempotency — zaten işlendiyse tekrar işleme
-  if (order.paymentStatus !== "WAITING_APPROVAL") return;
+  if (order.paymentStatus !== "PENDING_PAYMENT" && order.paymentStatus !== "WAITING_APPROVAL") return;
 
   if (status === "success") {
     // PAID yap
@@ -276,7 +276,7 @@ async function handleStoreCallback(orderNumber: string, status: string) {
   if (!order) return;
 
   // Idempotency
-  if (order.paymentStatus !== "WAITING_APPROVAL") return;
+  if (order.paymentStatus !== "PENDING_PAYMENT" && order.paymentStatus !== "WAITING_APPROVAL") return;
 
   if (status === "success") {
     await prisma.storeOrder.update({
@@ -477,11 +477,16 @@ export async function paytrStatusQuery(c: Context) {
   };
 
   if (data.status !== "success") {
+    // PENDING_PAYMENT için PayTR'da kayıt yok — bu beklenen durum
+    if (order.paymentStatus === "PENDING_PAYMENT") {
+      return c.json({ paymentStatus: "pending", totalAmount: null });
+    }
     return c.json({ error: data.err_msg || "Durum sorgulanamadı" }, 500);
   }
 
-  // PayTR success dönerse ve siparişimiz hâlâ WAITING_APPROVAL'daysa güncelle
-  if (data.payment_status === "success" && order.paymentStatus === "WAITING_APPROVAL") {
+  // PayTR success dönerse ve siparişimiz hâlâ ödeme bekliyorsa güncelle
+  if (data.payment_status === "success" &&
+      (order.paymentStatus === "PENDING_PAYMENT" || order.paymentStatus === "WAITING_APPROVAL")) {
     if (body.orderType === "donation") {
       await prisma.order.update({
         where: { id: order.id },
