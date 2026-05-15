@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { requireAuth, requireRole } from "../../middleware/auth.middleware.js";
+import { requireAuth, requireRole, optionalAuth } from "../../middleware/auth.middleware.js";
 import {
   trackByToken,
   cancelByToken,
@@ -27,7 +27,7 @@ orders.post("/cancel/:token", cancelByToken);
 orders.post("/:orderNumber/receipt", uploadDonationReceipt);
 
 // ─── GİRİŞ YAPMIŞ ────────────────────────────────────────────────────────────
-orders.post("/", zv("json", createOrderBody), createOrder);
+orders.post("/", optionalAuth, zv("json", createOrderBody), createOrder);
 orders.get("/my", requireAuth, zv("query", myOrdersQuery), getMyOrders);
 orders.get("/:id", requireAuth, zv("param", idParam), getOrderById);
 orders.post("/:id/cancel-request", requireAuth, zv("param", idParam), requestCancel);

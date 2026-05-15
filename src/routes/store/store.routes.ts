@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { requireAuth, requireRole } from "../../middleware/auth.middleware.js";
+import { requireAuth, requireRole, optionalAuth } from "../../middleware/auth.middleware.js";
 import {
   getPublicConfig,
   getShippingQuote,
@@ -75,7 +75,7 @@ store.post("/products/:id/reviews", requireAuth, zv("param", idParam), zv("json"
 store.delete("/reviews/:id", requireAuth, zv("param", idParam), deleteMyReview);
 
 // ─── SİPARİŞ — PUBLIC ────────────────────────────────────────────────────────
-store.post("/orders", zv("json", createStoreOrderBody), createStoreOrder);
+store.post("/orders", optionalAuth, zv("json", createStoreOrderBody), createStoreOrder);
 store.get("/orders/track/:token", trackStoreByToken);
 store.post("/orders/cancel/:token", cancelStoreByToken);
 store.post("/orders/:orderNumber/receipt", uploadStoreReceipt);

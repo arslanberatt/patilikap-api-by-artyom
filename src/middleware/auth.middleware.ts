@@ -12,6 +12,13 @@ export async function requireAuth(c: Context, next: Next) {
   await next();
 }
 
+export async function optionalAuth(c: Context, next: Next) {
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+
+  if (session) c.set("user", session.user);
+  await next();
+}
+
 export function requireRole(...roles: Role[]) {
   return async (c: Context, next: Next) => {
     const user = c.get("user") as { role: Role };
