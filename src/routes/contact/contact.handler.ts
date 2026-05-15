@@ -29,7 +29,7 @@ export async function handleContact(c: Context) {
   `;
 
   const ok = await sendEmail({
-    to: process.env.CONTACT_EMAIL || "destek@patilikap.com",
+    to: process.env.CONTACT_EMAIL || "no-reply@patilikap.com",
     subject: `[İletişim] ${topic ?? "Genel"} — ${name}`,
     html,
   });
