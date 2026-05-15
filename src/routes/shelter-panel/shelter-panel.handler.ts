@@ -5,8 +5,8 @@ type AuthUser = { id: string; role: string };
 
 async function getShelterForUser(userId: string) {
   return prisma.shelter.findFirst({
-    where: { userId, status: "APPROVED" },
-    select: { id: true, name: true },
+    where: { userId },
+    select: { id: true, name: true, status: true, code: true },
   });
 }
 
@@ -14,6 +14,18 @@ export async function getStats(c: Context) {
   const user    = c.get("user") as AuthUser;
   const shelter = await getShelterForUser(user.id);
   if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  // PENDING/REJECTED → sıfır stats + status bilgisi (404 değil)
+  if (shelter.status !== "APPROVED") {
+    return c.json({
+      shelterStatus: shelter.status,
+      shelterCode:   shelter.code ?? null,
+      toplamBagis: 0,
+      toplamHayirsever: 0,
+      buAykiBagis: 0,
+      aktifKampanya: 0,
+    });
+  }
 
   const campaignIds = await prisma.campaign.findMany({
     where: { shelterId: shelter.id },
@@ -55,6 +67,8 @@ export async function getStats(c: Context) {
   ]);
 
   return c.json({
+    shelterStatus: "APPROVED",
+    shelterCode:   shelter.code ?? null,
     toplamBagis:       Number(toplamBagis._sum.totalAmount ?? 0),
     toplamHayirsever,
     buAykiBagis:       Number(buAykiBagis._sum.totalAmount ?? 0),
@@ -62,10 +76,40 @@ export async function getStats(c: Context) {
   });
 }
 
+export async function getShelterCampaigns(c: Context) {
+  const user    = c.get("user") as AuthUser;
+  const shelter = await getShelterForUser(user.id);
+  if (!shelter || shelter.status !== "APPROVED") return c.json({ campaigns: [] });
+
+  const campaigns = await prisma.campaign.findMany({
+    where: { shelterId: shelter.id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      story: true,
+      coverImageUrl: true,
+      status: true,
+      createdAt: true,
+      products: {
+        select: {
+          targetStock: true,
+          currentStock: true,
+          product: { select: { id: true, name: true, imageUrl: true, price: true } },
+        },
+      },
+    },
+  });
+
+  return c.json({ campaigns });
+}
+
 export async function getDonors(c: Context) {
   const user    = c.get("user") as AuthUser;
   const shelter = await getShelterForUser(user.id);
   if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+  if (shelter.status !== "APPROVED") return c.json({ donors: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } });
 
   const query  = c.req.query();
   const page   = Math.max(1, Number(query.page) || 1);
@@ -173,19 +217,76 @@ export async function getDonorHistory(c: Context) {
   return c.json({ orders });
 }
 
-// Duyurular — DB modeli henüz yok, stub endpoint
 export async function getDuyurular(c: Context) {
-  return c.json([]);
+  const user    = c.get("user") as AuthUser;
+  const shelter = await getShelterForUser(user.id);
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  const announcements = await prisma.announcement.findMany({
+    where: { shelterId: shelter.id },
+    orderBy: { createdAt: "desc" },
+  });
+  return c.json(announcements);
 }
 
 export async function createDuyuru(c: Context) {
-  return c.json({ error: "Duyuru modeli henüz eklenmedi" }, 501);
+  const user    = c.get("user") as AuthUser;
+  const shelter = await getShelterForUser(user.id);
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  const body = await c.req.json();
+  const { title, content, isActive } = body;
+  if (!title?.trim() || !content?.trim()) {
+    return c.json({ error: "Başlık ve içerik zorunludur" }, 400);
+  }
+
+  const announcement = await prisma.announcement.create({
+    data: {
+      shelterId: shelter.id,
+      title: title.trim(),
+      content: content.trim(),
+      isActive: isActive !== false,
+    },
+  });
+  return c.json(announcement, 201);
 }
 
 export async function updateDuyuru(c: Context) {
-  return c.json({ error: "Duyuru modeli henüz eklenmedi" }, 501);
+  const user    = c.get("user") as AuthUser;
+  const shelter = await getShelterForUser(user.id);
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  const id   = c.req.param("id");
+  const body = await c.req.json();
+  const { title, content, isActive } = body;
+
+  const existing = await prisma.announcement.findFirst({
+    where: { id, shelterId: shelter.id },
+  });
+  if (!existing) return c.json({ error: "Duyuru bulunamadı" }, 404);
+
+  const updated = await prisma.announcement.update({
+    where: { id },
+    data: {
+      ...(title !== undefined && { title: title.trim() }),
+      ...(content !== undefined && { content: content.trim() }),
+      ...(isActive !== undefined && { isActive }),
+    },
+  });
+  return c.json(updated);
 }
 
 export async function deleteDuyuru(c: Context) {
-  return c.json({ error: "Duyuru modeli henüz eklenmedi" }, 501);
+  const user    = c.get("user") as AuthUser;
+  const shelter = await getShelterForUser(user.id);
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  const id       = c.req.param("id");
+  const existing = await prisma.announcement.findFirst({
+    where: { id, shelterId: shelter.id },
+  });
+  if (!existing) return c.json({ error: "Duyuru bulunamadı" }, 404);
+
+  await prisma.announcement.delete({ where: { id } });
+  return c.json({ success: true });
 }

@@ -22,7 +22,7 @@ shelters.get("/", zv("query", sheltersListQuery), getShelters);
 shelters.get("/:id", zv("param", idParam), getShelterById);
 
 // ─── SHELTER ──────────────────────────────────────────────────────────────────
-shelters.post("/", requireAuth, requireRole("SHELTER"), zv("json", createShelterBody), createShelter);
+shelters.post("/", requireAuth, zv("json", createShelterBody), createShelter);
 shelters.patch("/:id", requireAuth, requireRole("SHELTER"), zv("param", idParam), zv("json", updateShelterBody), updateShelter);
 shelters.post("/:id/deactivate", requireAuth, requireRole("SHELTER"), zv("param", idParam), deactivateShelter);
 

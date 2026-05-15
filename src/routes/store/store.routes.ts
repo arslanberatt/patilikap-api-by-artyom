@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware.js";
 import {
+  getPublicConfig,
+  getPublicBrands,
   getStoreCategories,
   getStoreAttributeOptions,
   getProducts,
@@ -46,6 +48,12 @@ import {
 } from "./store.schema.js";
 
 const store = new Hono();
+
+// ─── PUBLIC — KONFIG ─────────────────────────────────────────────────────────
+store.get("/public-config", getPublicConfig);
+
+// ─── PUBLIC — MARKALAR ───────────────────────────────────────────────────────
+store.get("/brands", getPublicBrands);
 
 // ─── PUBLIC — KATEGORİLER ─────────────────────────────────────────────────────
 store.get("/categories", getStoreCategories);

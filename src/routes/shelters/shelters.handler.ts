@@ -79,6 +79,7 @@ export async function getAdminShelters(c: Context) {
         district: true,
         phone: true,
         status: true,
+        code: true,
         coverImageUrl: true,
         documentUrls: true,
         createdAt: true,
@@ -123,19 +124,28 @@ export async function getShelterById(c: Context) {
 }
 
 
+function generateShelterCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = 'BAR-';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
 export async function createShelter(c: Context) {
   const user = c.get("user") as { id: string; role: string };
-
-  if (user.role !== "SHELTER") {
-    return c.json(errors.FORBIDDEN, 403);
-  }
 
   const body = await c.req.json() as {
     name: string;
     city: string;
-    district: string;
-    phone: string;
-    description: string;
+    district?: string;
+    phone?: string;
+    description?: string;
+    address?: string;
+    authorizedPerson?: string;
+    facebookUrl?: string;
+    instagramUrl?: string;
+    websiteUrl?: string;
+    locationLink?: string;
     documentUrls?: string[];
   };
 
@@ -144,9 +154,35 @@ export async function createShelter(c: Context) {
   });
   if (existing) return c.json(errors.CONFLICT, 409);
 
+  // Generate a unique shelter code, retry once on collision
+  let code = generateShelterCode();
+  const codeConflict = await prisma.shelter.findUnique({ where: { code } });
+  if (codeConflict) code = generateShelterCode();
+
   const shelter = await prisma.shelter.create({
-    data: { userId: user.id, status: "PENDING", ...body },
+    data: {
+      userId:           user.id,
+      status:           "PENDING",
+      code,
+      name:             body.name,
+      city:             body.city,
+      district:         body.district,
+      phone:            body.phone,
+      description:      body.description,
+      address:          body.address,
+      authorizedPerson: body.authorizedPerson,
+      facebookUrl:      body.facebookUrl || null,
+      instagramUrl:     body.instagramUrl || null,
+      websiteUrl:       body.websiteUrl   || null,
+      locationLink:     body.locationLink,
+      documentUrls:     body.documentUrls,
+    },
   });
+
+  // Kullanıcıyı SHELTER rolüne yükselt (DONOR ise)
+  if (user.role !== "SHELTER" && user.role !== "ADMIN") {
+    await prisma.user.update({ where: { id: user.id }, data: { role: "SHELTER" } });
+  }
 
   await notifyAdmins({
     type: "SYSTEM",

@@ -51,6 +51,25 @@ async function calculateShippingFee(totalWeightKg: number): Promise<number> {
 
 // ─── PUBLIC — KATEGORİLER ─────────────────────────────────────────────────────
 
+export async function getPublicConfig(c: Context) {
+    const config = await prisma.systemConfig.findFirst({ where: { isDefault: true } });
+    return c.json({
+        paytxSurchargePercent: config?.paytxSurchargePercent ?? 4,
+        bankName:              config?.bankName              ?? null,
+        accountHolder:         config?.accountHolder         ?? null,
+        iban:                  config?.iban                  ?? null,
+    });
+}
+
+export async function getPublicBrands(c: Context) {
+    const brands = await prisma.storeBrand.findMany({
+        where: { isActive: true },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, name: true, imageUrl: true, color: true },
+    });
+    return c.json({ brands });
+}
+
 export async function getStoreCategories(c: Context) {
     const categories = await prisma.category.findMany({
         where: { parentId: null },

@@ -12,8 +12,13 @@ export async function getCampaigns(c: Context) {
   const limit = Math.min(50, Math.max(1, Number(query.limit) || 12));
   const skip  = (page - 1) * limit;
 
+  const shelterId = query.shelterId?.trim() || undefined;
+
   // Öne çıkanları önce göster, sonra yeniler
-  const where = { status: "ACTIVE" as const };
+  const where = {
+    status: "ACTIVE" as const,
+    ...(shelterId && { shelterId }),
+  };
 
   const [campaigns, total] = await Promise.all([
     prisma.campaign.findMany({
@@ -30,7 +35,7 @@ export async function getCampaigns(c: Context) {
         viewCount: true,
         shareCount: true,
         shelter: {
-          select: { name: true, city: true, coverImageUrl: true },
+          select: { id: true, name: true, city: true, coverImageUrl: true },
         },
         products: {
           select: {

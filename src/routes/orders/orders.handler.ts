@@ -103,19 +103,17 @@ export async function createOrder(c: Context) {
   const body = await c.req.json() as {
     items: { campaignId: string; productId: string; quantity: number }[];
     paymentMethod: "EFT" | "PAYTR";
-    name: string;
-    email: string;
-    phone: string;
-    address: string;
-    city: string;
-    userIp: string;
+    name?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    city?: string;
+    userIp?: string;
     receiptUrl?: string;
+    campaignCodeId?: string;
   };
 
   if (!body.items || body.items.length === 0) return c.json(errors.BAD_REQUEST, 400);
-  if (!body.name || !body.email || !body.phone || !body.address || !body.city) {
-    return c.json(errors.BAD_REQUEST, 400);
-  }
 
   const campaignProducts = await Promise.all(
     body.items.map(async (item) => {
@@ -150,11 +148,11 @@ export async function createOrder(c: Context) {
     data: {
       orderNumber,
       userId: user?.id || null,
-      guestName: user ? null : body.name,
-      guestEmail: user ? null : body.email,
-      guestPhone: user ? null : body.phone,
-      guestAddress: body.address,
-      guestCity: body.city,
+      guestName: user ? null : (body.name || null),
+      guestEmail: user ? null : (body.email || null),
+      guestPhone: user ? null : (body.phone || null),
+      guestAddress: body.address || null,
+      guestCity: body.city || null,
       totalAmount,
       paymentMethod: body.paymentMethod,
       receiptUrl: body.receiptUrl,
@@ -162,6 +160,7 @@ export async function createOrder(c: Context) {
       cancelTokenExpiresAt,
       trackingToken,
       expiresAt,
+      campaignCodeId: body.campaignCodeId || null,
       items: {
         create: campaignProducts.map(({ cp, quantity }) => ({
           campaignId: cp!.campaignId,
@@ -202,12 +201,12 @@ export async function createOrder(c: Context) {
       link: `/admin/orders/${order.id}`,
     });
 
-    await sendEmail({
+    if (recipientEmail) await sendEmail({
       to: recipientEmail,
       subject: `Siparişiniz Alındı — ${orderNumber}`,
       html: buildOrderConfirmationEmail({
         orderNumber,
-        name: body.name,
+        name: body.name ?? '',
         items: campaignProducts.map(({ cp, quantity }) => ({
           productName: cp!.product.name,
           quantity,

@@ -10,16 +10,29 @@ export const adminSheltersListQuery = paginationQuery.extend({
   search: z.string().max(100).optional(),
 });
 
+export const createShelterBody = z.object({
+  name:             z.string().min(2).max(100),
+  city:             z.string().min(1).max(60),
+  district:         z.string().max(60).optional(),
+  phone:            z.string().max(20).optional(),
+  description:      z.string().max(2000).optional(),
+  address:          z.string().max(300).optional(),
+  authorizedPerson: z.string().max(100).optional(),
+  facebookUrl:      z.string().url().optional().or(z.literal('')),
+  instagramUrl:     z.string().url().optional().or(z.literal('')),
+  websiteUrl:       z.string().url().optional().or(z.literal('')),
+  locationLink:     z.string().max(500).optional(),
+  documentUrls:     z.array(z.string().url()).optional(),
+});
+
 const shelterBase = z.object({
   name:        z.string().min(2).max(100),
   city:        z.string().min(1).max(60),
-  district:    z.string().min(1).max(60),
-  phone:       z.string().min(7).max(20),
-  description: z.string().min(10).max(2000),
+  district:    z.string().max(60).optional(),
+  phone:       z.string().max(20).optional(),
+  description: z.string().max(2000).optional(),
   documentUrls: z.array(z.string().url()).optional(),
 });
-
-export const createShelterBody = shelterBase;
 
 export const updateShelterBody = shelterBase.partial().extend({
   address:         z.string().max(300).optional(),
