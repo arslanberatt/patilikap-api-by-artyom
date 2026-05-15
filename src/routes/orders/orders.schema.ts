@@ -8,12 +8,12 @@ export const createOrderBody = z.object({
     quantity:   z.number().int().min(1),
   })).min(1),
   paymentMethod: PaymentMethodEnum,
-  name:    z.string().min(1).max(100),
-  email:   z.string().email(),
-  phone:   z.string().min(7).max(20),
-  address: z.string().min(5).max(300),
-  city:    z.string().min(1).max(60),
-  userIp:  z.string().min(1),
+  name:    z.string().min(1).max(100).optional(),
+  email:   z.string().email().optional(),
+  phone:   z.string().min(7).max(20).optional(),
+  address: z.string().min(5).max(300).optional(),
+  city:    z.string().min(1).max(60).optional(),
+  userIp:  z.string().min(1).optional(),
   receiptUrl: z.string().url().optional(),
 });
 

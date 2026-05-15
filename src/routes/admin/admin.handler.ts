@@ -30,9 +30,8 @@ export async function getUsers(c: Context) {
         emailVerified: true,
         onboardingCompleted: true,
         createdAt: true,
-        _count: {
-          select: { orders: true, storeOrders: true, shelters: true },
-        },
+        shelters: { select: { id: true, name: true, status: true } },
+        _count: { select: { orders: true, storeOrders: true } },
       },
     }),
     prisma.user.count({ where }),
@@ -55,7 +54,14 @@ export async function getUserById(c: Context) {
       emailVerified: true,
       onboardingCompleted: true,
       createdAt: true,
-      shelters: { select: { id: true, name: true, status: true } },
+      shelters: {
+        select: {
+          id: true, name: true, status: true, city: true, district: true,
+          phone: true, description: true, address: true, authorizedPerson: true,
+          charterDocUrl: true, activityDocUrl: true, documentUrls: true, createdAt: true,
+          code: true, slug: true,
+        },
+      },
       orders: {
         orderBy: { createdAt: "desc" },
         take: 5,

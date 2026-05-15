@@ -154,6 +154,11 @@ export async function createOrder(c: Context) {
 
   if (!body.items || body.items.length === 0) return c.json(errors.BAD_REQUEST, 400);
 
+  // Guest kullanıcılar için iletişim bilgileri zorunlu
+  if (!user && (!body.name || !body.email)) {
+    return c.json({ error: "Guest users must provide name and email" }, 400);
+  }
+
   const campaignProducts = await Promise.all(
     body.items.map(async (item) => {
       const cp = await prisma.campaignProduct.findFirst({

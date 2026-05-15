@@ -308,6 +308,10 @@ export async function approveShelter(c: Context) {
     data: { status: "APPROVED" },
   });
 
+  if (shelter.userId) {
+    await prisma.user.update({ where: { id: shelter.userId }, data: { role: "SHELTER" } });
+  }
+
   await prisma.activityLog.create({
     data: {
       actorId: admin.id,
