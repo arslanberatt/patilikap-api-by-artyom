@@ -168,9 +168,10 @@ export async function paytrCallback(c: Context) {
   }
 
   // 2. Sipariş türünü bul — prefix'e göre
-  // DO- → bağış siparişi, SO- → mağaza siparişi
-  const isDonation = merchant_oid.startsWith("DO-");
-  const isStore = merchant_oid.startsWith("SO-");
+  // DO → bağış siparişi, SO → mağaza siparişi
+  // (Hem eski "DO-..." hem yeni "DO..." formatını destekle — PayTR tire kabul etmiyor)
+  const isDonation = merchant_oid.startsWith("DO");
+  const isStore = merchant_oid.startsWith("SO");
 
   if (isDonation) {
     await handleDonationCallback(merchant_oid, status);

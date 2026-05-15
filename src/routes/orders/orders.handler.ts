@@ -11,7 +11,7 @@ import { generatePaytrToken } from "../paytr/paytr.handler.js";
 function generateOrderNumber(): string {
   const timestamp = Date.now().toString().slice(-6);
   const random = Math.random().toString(36).slice(2, 5).toUpperCase();
-  return `DO-${timestamp}${random}`;
+  return `DO${timestamp}${random}`;
 }
 
 function generateToken(): string {
