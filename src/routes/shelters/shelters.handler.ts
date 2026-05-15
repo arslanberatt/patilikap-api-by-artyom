@@ -78,7 +78,14 @@ export async function getAdminShelters(c: Context) {
         name: true,
         city: true,
         district: true,
+        address: true,
         phone: true,
+        description: true,
+        authorizedPerson: true,
+        facebookUrl: true,
+        instagramUrl: true,
+        websiteUrl: true,
+        locationLink: true,
         status: true,
         code: true,
         slug: true,
@@ -231,6 +238,8 @@ export async function updateShelter(c: Context) {
     websiteUrl?: string;
     locationLink?: string;
     documentUrls?: string[];
+    charterDocUrl?: string;
+    activityDocUrl?: string;
   };
 
   // Kapak resmi değiştiyse eskisini Bunny'den sil
@@ -238,19 +247,20 @@ export async function updateShelter(c: Context) {
     await deleteFile(shelter.coverImageUrl);
   }
 
-  // Belgelerden çıkarılanları Bunny'den sil
-  if (body.documentUrls && shelter.documentUrls.length > 0) {
-    const removed = shelter.documentUrls.filter(
-      (url) => !body.documentUrls!.includes(url)
-    );
-    if (removed.length > 0) {
-      await Promise.all(removed.map(deleteFile));
-    }
+  // Belge geçmişi: yeni belge yüklenince eskisini documentUrls arşivine taşı (silme)
+  let documentUrls = body.documentUrls ?? shelter.documentUrls;
+  if (body.charterDocUrl && shelter.charterDocUrl && body.charterDocUrl !== shelter.charterDocUrl) {
+    documentUrls = [...documentUrls, shelter.charterDocUrl];
   }
+  if (body.activityDocUrl && shelter.activityDocUrl && body.activityDocUrl !== shelter.activityDocUrl) {
+    documentUrls = [...documentUrls, shelter.activityDocUrl];
+  }
+
+  const { documentUrls: _ignored, ...rest } = body;
 
   const updated = await prisma.shelter.update({
     where: { id },
-    data: { ...body },
+    data: { ...rest, documentUrls },
   });
 
   return c.json(updated);

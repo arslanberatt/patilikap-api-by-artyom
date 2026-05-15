@@ -127,9 +127,10 @@ export async function createCampaign(c: Context) {
   }
 
   const shelter = await prisma.shelter.findFirst({
-    where: { userId: user.id, status: "APPROVED" },
+    where: { userId: user.id },
   });
-  if (!shelter) return c.json(errors.FORBIDDEN, 403);
+  if (!shelter) return c.json({ error: "Barınağınız bulunamadı" }, 403);
+  if (shelter.status === "REJECTED") return c.json({ error: "Başvurunuz reddedildi, kampanya oluşturamazsınız" }, 403);
 
   const body = await c.req.json() as {
     title: string;
@@ -144,9 +145,10 @@ export async function createCampaign(c: Context) {
   if (existing) return c.json(errors.CONFLICT, 409);
 
   const slug = generateUniqueSlug(body.title);
+  const isDraft = shelter.status !== "APPROVED";
 
   const campaign = await prisma.campaign.create({
-    data: { shelterId: shelter.id, slug, ...body },
+    data: { shelterId: shelter.id, slug, ...body, status: isDraft ? "DRAFT" : "ACTIVE" },
   });
 
   return c.json(campaign, 201);

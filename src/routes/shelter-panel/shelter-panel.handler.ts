@@ -6,7 +6,7 @@ type AuthUser = { id: string; role: string };
 async function getShelterForUser(userId: string) {
   return prisma.shelter.findFirst({
     where: { userId },
-    select: { id: true, name: true, status: true, code: true, slug: true },
+    select: { id: true, name: true, status: true, code: true, slug: true, charterDocUrl: true, activityDocUrl: true },
   });
 }
 
@@ -18,9 +18,12 @@ export async function getStats(c: Context) {
   // PENDING/REJECTED → sıfır stats + status bilgisi (404 değil)
   if (shelter.status !== "APPROVED") {
     return c.json({
-      shelterStatus: shelter.status,
-      shelterCode:   shelter.code ?? null,
-      shelterSlug:   shelter.slug ?? null,
+      shelterStatus:   shelter.status,
+      shelterCode:     shelter.code ?? null,
+      shelterSlug:     shelter.slug ?? null,
+      charterDocUrl:   shelter.charterDocUrl ?? null,
+      activityDocUrl:  shelter.activityDocUrl ?? null,
+      shelterId:       shelter.id,
       toplamBagis: 0,
       toplamHayirsever: 0,
       buAykiBagis: 0,
@@ -77,21 +80,24 @@ export async function getStats(c: Context) {
   ]);
 
   return c.json({
-    shelterStatus: "APPROVED",
-    shelterCode:   shelter.code ?? null,
-    shelterSlug:   shelter.slug ?? null,
-    toplamBagis:       Number(toplamBagis._sum.totalAmount ?? 0),
+    shelterStatus:  "APPROVED",
+    shelterCode:    shelter.code ?? null,
+    shelterSlug:    shelter.slug ?? null,
+    charterDocUrl:  shelter.charterDocUrl ?? null,
+    activityDocUrl: shelter.activityDocUrl ?? null,
+    shelterId:      shelter.id,
+    toplamBagis:        Number(toplamBagis._sum.totalAmount ?? 0),
     toplamHayirsever,
-    buAykiBagis:       Number(buAykiBagis._sum.totalAmount ?? 0),
+    buAykiBagis:        Number(buAykiBagis._sum.totalAmount ?? 0),
     aktifKampanya,
-    toplamUrun:        Number(toplamUrun._sum.quantity ?? 0),
+    toplamUrun:         Number(toplamUrun._sum.quantity ?? 0),
   });
 }
 
 export async function getShelterCampaigns(c: Context) {
   const user    = c.get("user") as AuthUser;
   const shelter = await getShelterForUser(user.id);
-  if (!shelter || shelter.status !== "APPROVED") return c.json({ campaigns: [] });
+  if (!shelter) return c.json({ campaigns: [] });
 
   const campaigns = await prisma.campaign.findMany({
     where: { shelterId: shelter.id },
@@ -285,6 +291,30 @@ export async function updateDuyuru(c: Context) {
       ...(isActive !== undefined && { isActive }),
     },
   });
+  return c.json(updated);
+}
+
+export async function updateMyDocs(c: Context) {
+  const user = c.get("user") as AuthUser;
+
+  const shelter = await prisma.shelter.findFirst({ where: { userId: user.id } });
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  const body = await c.req.json() as { charterDocUrl?: string; activityDocUrl?: string };
+
+  let documentUrls = shelter.documentUrls;
+  if (body.charterDocUrl && shelter.charterDocUrl && body.charterDocUrl !== shelter.charterDocUrl) {
+    documentUrls = [...documentUrls, shelter.charterDocUrl];
+  }
+  if (body.activityDocUrl && shelter.activityDocUrl && body.activityDocUrl !== shelter.activityDocUrl) {
+    documentUrls = [...documentUrls, shelter.activityDocUrl];
+  }
+
+  const updated = await prisma.shelter.update({
+    where: { id: shelter.id },
+    data: { ...body, documentUrls },
+  });
+
   return c.json(updated);
 }
 

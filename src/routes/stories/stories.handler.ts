@@ -84,7 +84,7 @@ export async function createStory(c: Context) {
   const shelter = await prisma.shelter.findFirst({
     where: { userId: user.id, status: "APPROVED" },
   });
-  if (!shelter) return c.json(errors.FORBIDDEN, 403);
+  if (!shelter) return c.json({ error: "Barınağınız henüz onaylanmamış" }, 403);
 
   const body = await c.req.json() as {
     type: "IMAGE" | "VIDEO";

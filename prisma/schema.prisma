@@ -201,6 +201,7 @@ model CampaignCode {
 }
 
 enum CampaignStatus {
+  DRAFT
   ACTIVE
   INACTIVE
   QUEUED
