@@ -38,8 +38,9 @@ async function calculateShippingFee(totalWeightKg: number): Promise<number> {
     });
 
     for (const rate of rates) {
-        const maxKg = rate.maxKg ?? Infinity;
-        if (totalWeightKg >= rate.minKg && totalWeightKg <= maxKg) {
+        const minKg = Number(rate.minKg);
+        const maxKg = rate.maxKg !== null ? Number(rate.maxKg) : Infinity;
+        if (totalWeightKg >= minKg && totalWeightKg <= maxKg) {
             return Number(rate.price);
         }
     }

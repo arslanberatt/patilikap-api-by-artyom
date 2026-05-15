@@ -14,6 +14,7 @@ export async function getStories(c: Context) {
       status: "APPROVED",
       isActive: true,
       expiresAt: { gt: now },
+      campaign: { status: "ACTIVE" },
     },
     orderBy: { createdAt: "desc" },
     select: {
