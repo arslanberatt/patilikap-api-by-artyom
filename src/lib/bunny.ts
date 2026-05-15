@@ -46,11 +46,16 @@ async function optimizeBuffer(
     buffer: Buffer,
     mimeType: string
 ): Promise<{ buffer: Buffer; ext: string; contentType: string }> {
-    // PDF ve video — olduğu gibi bırak
-    if (mimeType === "application/pdf" || mimeType.startsWith("video/")) {
-        const ext = mimeType === "application/pdf"
-            ? "pdf"
-            : mimeType.split("/")[1];
+    // PDF, video, DOC/DOCX — olduğu gibi bırak
+    if (mimeType === "application/pdf" || mimeType.startsWith("video/")
+        || mimeType === "application/msword"
+        || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        const extMap: Record<string, string> = {
+            "application/pdf": "pdf",
+            "application/msword": "doc",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+        };
+        const ext = extMap[mimeType] ?? mimeType.split("/")[1];
         return { buffer, ext, contentType: mimeType };
     }
 
@@ -200,7 +205,14 @@ const ALLOWED_IMAGE_TYPES = [
     "image/webp",
     "image/avif",
 ];
-const ALLOWED_DOC_TYPES = ["application/pdf"];
+const ALLOWED_DOC_TYPES = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/jpeg",
+    "image/png",
+    "image/jpg",
+];
 const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/quicktime"];
 
 export function validateImage(
@@ -221,10 +233,10 @@ export function validateDocument(
     sizeBytes: number
 ): { valid: boolean; error?: string } {
     if (!ALLOWED_DOC_TYPES.includes(mimeType)) {
-        return { valid: false, error: "Sadece PDF yükleyebilirsiniz" };
+        return { valid: false, error: "Sadece PDF, DOC, DOCX, JPEG veya PNG yükleyebilirsiniz" };
     }
-    if (sizeBytes > 20 * 1024 * 1024) {
-        return { valid: false, error: "Belge 20MB'dan büyük olamaz" };
+    if (sizeBytes > 5 * 1024 * 1024) {
+        return { valid: false, error: "Belge 5MB'dan büyük olamaz" };
     }
     return { valid: true };
 }
