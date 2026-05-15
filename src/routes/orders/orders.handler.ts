@@ -334,7 +334,13 @@ export async function getOrderById(c: Context) {
 
   const order = await prisma.order.findFirst({
     where: { id },
-    include: { items: true },
+    include: {
+      items: {
+        include: {
+          campaign: { select: { id: true, title: true, slug: true } },
+        },
+      },
+    },
   });
   if (!order) return c.json(errors.NOT_FOUND, 404);
 

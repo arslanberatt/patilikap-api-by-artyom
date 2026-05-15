@@ -61,6 +61,14 @@ export async function getPublicConfig(c: Context) {
     });
 }
 
+export async function getShippingQuote(c: Context) {
+    const w = Number(c.req.query("weightKg") ?? 0);
+    const weightKg = isFinite(w) && w > 0 ? w : 0;
+    const fee = await calculateShippingFee(weightKg);
+    const config = await prisma.systemConfig.findFirst({ where: { isDefault: true } });
+    return c.json({ fee, freeShippingThreshold: config?.freeShippingThreshold ?? null });
+}
+
 export async function getPublicBrands(c: Context) {
     const brands = await prisma.storeBrand.findMany({
         where: { isActive: true },
@@ -352,18 +360,42 @@ export async function createStoreOrder(c: Context) {
     const body = await c.req.json() as {
         items: { productId: string; quantity: number }[];
         paymentMethod: "EFT" | "PAYTR";
-        name: string;
-        email: string;
-        phone: string;
-        address: string;
-        city: string;
-        userIp: string;
+        name?: string;
+        email?: string;
+        phone?: string;
+        address?: string;
+        city?: string;
+        addressId?: string;
+        userIp?: string;
         couponCode?: string;
         receiptUrl?: string;
     };
 
     if (!body.items || body.items.length === 0) return c.json(errors.BAD_REQUEST, 400);
-    if (!body.name || !body.email || !body.phone || !body.address || !body.city) {
+
+    // Resolve contact/address from addressId (logged-in) or direct fields (guest)
+    let resolved = {
+        name: body.name,
+        email: body.email,
+        phone: body.phone,
+        address: body.address,
+        city: body.city,
+    };
+    if (user && body.addressId) {
+        const addr = await prisma.userAddress.findFirst({
+            where: { id: body.addressId, userId: user.id },
+        });
+        if (!addr) return c.json(errors.NOT_FOUND, 404);
+        resolved = {
+            name: addr.fullName,
+            email: user.email,
+            phone: addr.phone,
+            address: addr.address,
+            city: addr.city,
+        };
+    }
+
+    if (!resolved.name || !resolved.email || !resolved.phone || !resolved.address || !resolved.city) {
         return c.json(errors.BAD_REQUEST, 400);
     }
 
@@ -463,11 +495,11 @@ export async function createStoreOrder(c: Context) {
         data: {
             orderNumber,
             userId: user?.id || null,
-            guestName: user ? null : body.name,
-            guestEmail: user ? null : body.email,
-            guestPhone: user ? null : body.phone,
-            guestAddress: body.address,
-            guestCity: body.city,
+            guestName: user ? null : resolved.name!,
+            guestEmail: user ? null : resolved.email!,
+            guestPhone: user ? null : resolved.phone!,
+            guestAddress: resolved.address!,
+            guestCity: resolved.city!,
             subtotal,
             discountAmount: totalDiscount,
             shippingFee,
@@ -480,7 +512,7 @@ export async function createStoreOrder(c: Context) {
             cancelTokenExpiresAt,
             trackingToken,
             expiresAt,
-            shippingAddress: `${body.address}, ${body.city}`,
+            shippingAddress: `${resolved.address}, ${resolved.city}`,
             items: {
                 create: products.map(({ product, quantity }) => ({
                     productId: product!.id,
@@ -541,13 +573,13 @@ export async function createStoreOrder(c: Context) {
     });
 
     // Mail gönder
-    const recipientEmail = user?.email || body.email;
+    const recipientEmail = user?.email || resolved.email!;
     await sendEmail({
         to: recipientEmail,
         subject: `Siparişiniz Alındı — ${orderNumber}`,
         html: buildOrderConfirmationEmail({
             orderNumber,
-            name: body.name,
+            name: resolved.name!,
             items: products.map(({ product, quantity }) => ({
                 productName: product!.name,
                 quantity,

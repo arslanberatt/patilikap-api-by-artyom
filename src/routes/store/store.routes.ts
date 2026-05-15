@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware.js";
 import {
   getPublicConfig,
+  getShippingQuote,
   getPublicBrands,
   getStoreCategories,
   getStoreAttributeOptions,
@@ -51,6 +52,7 @@ const store = new Hono();
 
 // ─── PUBLIC — KONFIG ─────────────────────────────────────────────────────────
 store.get("/public-config", getPublicConfig);
+store.get("/shipping-quote", getShippingQuote);
 
 // ─── PUBLIC — MARKALAR ───────────────────────────────────────────────────────
 store.get("/brands", getPublicBrands);
