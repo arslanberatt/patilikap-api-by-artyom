@@ -8,6 +8,9 @@ import {
   getPendingStories,
   approveStory,
   rejectStory,
+  getApprovedStories,
+  updateStoryCaption,
+  toggleStoryActive,
 } from "./stories.handler.js";
 import { zv } from "../../lib/zValidator.js";
 import { idParam } from "../../lib/zSchemas.js";
@@ -25,7 +28,10 @@ stories.delete("/:id", requireAuth, zv("param", idParam), deleteStory);
 
 // ─── ADMIN ────────────────────────────────────────────────────────────────────
 stories.get("/pending", requireAuth, requireRole("ADMIN"), getPendingStories);
+stories.get("/approved", requireAuth, requireRole("ADMIN"), getApprovedStories);
 stories.post("/:id/approve", requireAuth, requireRole("ADMIN"), zv("param", idParam), approveStory);
 stories.post("/:id/reject", requireAuth, requireRole("ADMIN"), zv("param", idParam), rejectStory);
+stories.patch("/:id/caption", requireAuth, requireRole("ADMIN"), zv("param", idParam), updateStoryCaption);
+stories.post("/:id/toggle", requireAuth, requireRole("ADMIN"), zv("param", idParam), toggleStoryActive);
 
 export default stories;

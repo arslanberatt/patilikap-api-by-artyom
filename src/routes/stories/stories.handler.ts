@@ -282,6 +282,94 @@ export async function rejectStory(c: Context) {
   return c.json({ success: true });
 }
 
+export async function getApprovedStories(c: Context) {
+  const stories = await prisma.shelterStory.findMany({
+    where: { status: "APPROVED" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      type: true,
+      mediaUrl: true,
+      caption: true,
+      isActive: true,
+      viewCount: true,
+      createdAt: true,
+      expiresAt: true,
+      shelter: {
+        select: { id: true, name: true, city: true, coverImageUrl: true },
+      },
+      campaign: {
+        select: { id: true, title: true, slug: true },
+      },
+    },
+  });
+
+  return c.json(stories);
+}
+
+export async function updateStoryCaption(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+  const body = await c.req.json() as { caption: string };
+
+  const story = await prisma.shelterStory.findFirst({
+    where: { id },
+    include: { shelter: true },
+  });
+  if (!story) return c.json(errors.NOT_FOUND, 404);
+
+  const updated = await prisma.shelterStory.update({
+    where: { id },
+    data: { caption: body.caption ?? null },
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "STORY_UPDATED",
+      targetType: "ShelterStory",
+      targetId: story.id,
+      targetName: story.shelter.name,
+      message: `${story.shelter.name} barınağının hikaye açıklaması güncellendi`,
+    },
+  });
+
+  return c.json(updated);
+}
+
+export async function toggleStoryActive(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+
+  const story = await prisma.shelterStory.findFirst({
+    where: { id },
+    include: { shelter: true },
+  });
+  if (!story) return c.json(errors.NOT_FOUND, 404);
+
+  const updated = await prisma.shelterStory.update({
+    where: { id },
+    data: { isActive: !story.isActive },
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: updated.isActive ? "STORY_ACTIVATED" : "STORY_DEACTIVATED",
+      targetType: "ShelterStory",
+      targetId: story.id,
+      targetName: story.shelter.name,
+      message: `${story.shelter.name} barınağının hikayesi ${updated.isActive ? "aktifleştirildi" : "pasife alındı"}`,
+    },
+  });
+
+  return c.json(updated);
+}
+
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
 
 async function notifyAdmins(data: {

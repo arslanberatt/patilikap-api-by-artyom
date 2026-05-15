@@ -570,6 +570,52 @@ export async function rejectCampaign(c: Context) {
   return c.json(updated);
 }
 
+// ─── SHELTER — BEKLEMEYE AL ────────────────────────────────────────────────────
+
+export async function pauseCampaign(c: Context) {
+  const user = c.get("user") as { id: string; role: string; name: string };
+  const { id } = c.req.param();
+
+  const campaign = await prisma.campaign.findFirst({ where: { id } });
+  if (!campaign) return c.json(errors.NOT_FOUND, 404);
+
+  const shelter = await prisma.shelter.findFirst({ where: { userId: user.id } });
+  if (campaign.shelterId !== shelter?.id && user.role !== "ADMIN") {
+    return c.json(errors.FORBIDDEN, 403);
+  }
+
+  if (campaign.status === "DRAFT") {
+    return c.json(errors.BAD_REQUEST, 400);
+  }
+
+  const updated = await prisma.campaign.update({
+    where: { id },
+    data: { status: "DRAFT" },
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: user.id,
+      actorName: user.name,
+      actorType: "SHELTER",
+      action: "CAMPAIGN_PAUSED",
+      targetType: "Campaign",
+      targetId: campaign.id,
+      targetName: campaign.title ?? "",
+      message: `${campaign.title ?? ""} kampanyası beklemeye alındı`,
+    },
+  });
+
+  await notifyAdmins({
+    type: "SYSTEM",
+    title: "Kampanya Beklemeye Alındı",
+    message: `Barınak "${campaign.title}" kampanyasını beklemeye aldı, incelemenizi bekliyor.`,
+    link: "/admin/campaigns",
+  });
+
+  return c.json(updated);
+}
+
 // ─── ADMIN — TÜM KAMPANYALAR ──────────────────────────────────────────────────
 
 export async function adminListCampaigns(c: Context) {
