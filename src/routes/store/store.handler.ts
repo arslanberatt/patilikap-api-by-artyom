@@ -616,6 +616,7 @@ export async function createStoreOrder(c: Context) {
         });
 
         if (!paytrResult.token) {
+            console.error("[store] PayTR token alınamadı:", paytrResult.error, "orderNumber:", orderNumber);
             return c.json({ error: paytrResult.error || "PayTR token alınamadı" }, 500);
         }
 

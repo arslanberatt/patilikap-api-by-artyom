@@ -8,6 +8,11 @@ import { sendEmail, buildShelterDonationEmail } from "../../lib/email.js";
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
 
 function getPaytrEnv() {
+  const required = ["PAYTR_MERCHANT_ID", "PAYTR_MERCHANT_KEY", "PAYTR_MERCHANT_SALT", "APP_URL", "FRONTEND_URL"];
+  for (const k of required) {
+    if (!process.env[k]) console.error(`[paytr] ENV eksik: ${k}`);
+  }
+
   const merchantId = process.env.PAYTR_MERCHANT_ID!;
   const merchantKey = process.env.PAYTR_MERCHANT_KEY!;
   const merchantSalt = process.env.PAYTR_MERCHANT_SALT!;
@@ -63,7 +68,7 @@ export async function generatePaytrToken(params: {
     payment_amount:       String(params.amount),
     paytr_token:          token,
     user_basket:          userBasket,
-    debug_on:             "0",
+    debug_on:             process.env.NODE_ENV === "production" ? "0" : "1",
     no_installment:       "0",
     max_installment:      "12",
     user_name:            userName,
@@ -79,6 +84,24 @@ export async function generatePaytrToken(params: {
     iframe_v2:            "1",
   });
 
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[paytr] get-token request:", {
+      merchant_id:         merchantId,
+      merchant_oid:        params.orderNumber,
+      user_ip:             userIp,
+      email,
+      payment_amount:      params.amount,
+      user_name:           userName,
+      user_phone:          userPhone,
+      user_address:        userAddress,
+      merchant_ok_url:     `${frontendUrl}/odeme-basarili`,
+      merchant_fail_url:   `${frontendUrl}/odeme-basarisiz`,
+      merchant_notify_url: `${appUrl}/api/paytr/callback`,
+      test_mode:           testMode,
+      basket:              params.basketItems,
+    });
+  }
+
   const response = await fetch("https://www.paytr.com/odeme/api/get-token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -88,7 +111,12 @@ export async function generatePaytrToken(params: {
   const data = await response.json() as { status: string; token?: string; reason?: string };
 
   if (data.status !== "success" || !data.token) {
+    console.error("[paytr] get-token reddedildi:", data, "merchant_oid:", params.orderNumber);
     return { error: data.reason || "PayTR token alınamadı" };
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[paytr] get-token başarılı, merchant_oid:", params.orderNumber);
   }
 
   return { token: data.token };
