@@ -213,8 +213,15 @@ export async function getProducts(c: Context) {
         andConditions.push({ nutritionValues: { path: [key], equals: value } });
     });
 
+    const showInDonation = query.showInDonation === "true" ? true : undefined;
+
     // where nesnesini aşamalı olarak oluştur — tip çıkarımını korur
-    const where: any = { showInStore: true, isActive: true };
+    const where: any = { isActive: true };
+    if (showInDonation !== undefined) {
+        where.showInDonation = showInDonation;
+    } else {
+        where.showInStore = true;
+    }
     if (expandedCatIds.length > 0) where.categoryId = { in: expandedCatIds };
     if (brand) where.brand = brand;
     if (tag) where.tags = { has: tag };

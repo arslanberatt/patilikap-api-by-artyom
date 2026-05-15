@@ -688,6 +688,7 @@ export async function getDashboardStats(c: Context) {
     pendingShelters,
     totalCampaigns,
     activeCampaigns,
+    pendingCampaigns,
     totalOrders,
     pendingOrders,
     cancelRequestOrders,
@@ -708,6 +709,7 @@ export async function getDashboardStats(c: Context) {
     prisma.shelter.count({ where: { status: "PENDING" } }),
     prisma.campaign.count(),
     prisma.campaign.count({ where: { status: "ACTIVE" } }),
+    prisma.campaign.count({ where: { status: "DRAFT" } }),
     prisma.order.count(),
     prisma.order.count({ where: { paymentStatus: "WAITING_APPROVAL" } }),
     prisma.order.count({ where: { cancelRequest: true } }),
@@ -775,6 +777,7 @@ export async function getDashboardStats(c: Context) {
     campaigns: {
       total: totalCampaigns,
       active: activeCampaigns,
+      pending: pendingCampaigns,
     },
     orders: {
       total: totalOrders,

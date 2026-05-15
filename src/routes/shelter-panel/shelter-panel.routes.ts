@@ -10,6 +10,7 @@ import {
   updateDuyuru,
   deleteDuyuru,
   updateMyDocs,
+  getMyShelterStories,
 } from "./shelter-panel.handler.js";
 
 const shelterPanel = new Hono();
@@ -25,5 +26,6 @@ shelterPanel.post("/announcements",       createDuyuru);
 shelterPanel.put("/announcements/:id",    updateDuyuru);
 shelterPanel.delete("/announcements/:id", deleteDuyuru);
 shelterPanel.patch("/docs",               updateMyDocs);
+shelterPanel.get("/stories",              getMyShelterStories);
 
 export default shelterPanel;

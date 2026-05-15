@@ -90,8 +90,7 @@ export async function createStory(c: Context) {
     type: "IMAGE" | "VIDEO";
     mediaUrl: string;
     caption?: string;
-    link?: string;
-    campaignId?: string;
+    campaignId: string;
   };
 
   // 1 hafta sonra expire olur
@@ -103,7 +102,6 @@ export async function createStory(c: Context) {
       type: body.type,
       mediaUrl: body.mediaUrl,
       caption: body.caption,
-      link: body.link,
       campaignId: body.campaignId,
       expiresAt,
       status: "PENDING",

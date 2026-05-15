@@ -318,6 +318,23 @@ export async function updateMyDocs(c: Context) {
   return c.json(updated);
 }
 
+export async function getMyShelterStories(c: Context) {
+  const user    = c.get("user") as AuthUser;
+  const shelter = await getShelterForUser(user.id);
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  const stories = await prisma.shelterStory.findMany({
+    where: { shelterId: shelter.id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, type: true, mediaUrl: true, caption: true,
+      status: true, viewCount: true, expiresAt: true, createdAt: true,
+      campaign: { select: { id: true, title: true, slug: true } },
+    },
+  });
+  return c.json(stories);
+}
+
 export async function deleteDuyuru(c: Context) {
   const user    = c.get("user") as AuthUser;
   const shelter = await getShelterForUser(user.id);

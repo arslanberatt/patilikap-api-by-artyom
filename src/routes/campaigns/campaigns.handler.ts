@@ -145,10 +145,16 @@ export async function createCampaign(c: Context) {
   if (existing) return c.json(errors.CONFLICT, 409);
 
   const slug = generateUniqueSlug(body.title);
-  const isDraft = shelter.status !== "APPROVED";
 
   const campaign = await prisma.campaign.create({
-    data: { shelterId: shelter.id, slug, ...body, status: isDraft ? "DRAFT" : "ACTIVE" },
+    data: { shelterId: shelter.id, slug, ...body, status: "DRAFT" },
+  });
+
+  await notifyAdmins({
+    type: "SYSTEM",
+    title: "Onay Bekleyen Kampanya",
+    message: `${shelter.name} yeni bir kampanya oluşturdu: ${body.title}`,
+    link: "/admin/campaigns?status=DRAFT",
   });
 
   return c.json(campaign, 201);
@@ -474,6 +480,96 @@ export async function removeCampaignProduct(c: Context) {
   return c.json({ success: true });
 }
 
+// ─── ADMIN — ONAY ─────────────────────────────────────────────────────────────
+
+export async function approveCampaign(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+
+  const campaign = await prisma.campaign.findFirst({
+    where: { id },
+    include: { shelter: true },
+  });
+  if (!campaign) return c.json(errors.NOT_FOUND, 404);
+  if (campaign.status !== "DRAFT") return c.json(errors.BAD_REQUEST, 400);
+
+  const updated = await prisma.campaign.update({
+    where: { id },
+    data: { status: "ACTIVE" },
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "CAMPAIGN_ACTIVATED",
+      targetType: "Campaign",
+      targetId: campaign.id,
+      targetName: campaign.title ?? "",
+      message: activityMessages.CAMPAIGN_ACTIVATED(campaign.title ?? ""),
+    },
+  });
+
+  if (campaign.shelter.userId) {
+    await prisma.notification.create({
+      data: {
+        userId: campaign.shelter.userId,
+        type: "SYSTEM",
+        title: "Kampanyanız Onaylandı!",
+        message: `"${campaign.title}" kampanyanız admin tarafından onaylandı ve yayına girdi.`,
+        link: `/shelter-panel/kampanyalar`,
+      },
+    });
+  }
+
+  return c.json(updated);
+}
+
+export async function rejectCampaign(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+
+  const campaign = await prisma.campaign.findFirst({
+    where: { id },
+    include: { shelter: true },
+  });
+  if (!campaign) return c.json(errors.NOT_FOUND, 404);
+  if (campaign.status !== "DRAFT") return c.json(errors.BAD_REQUEST, 400);
+
+  const updated = await prisma.campaign.update({
+    where: { id },
+    data: { status: "INACTIVE" },
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "CAMPAIGN_DEACTIVATED",
+      targetType: "Campaign",
+      targetId: campaign.id,
+      targetName: campaign.title ?? "",
+      message: `${campaign.title ?? ""} kampanyası admin tarafından reddedildi`,
+    },
+  });
+
+  if (campaign.shelter.userId) {
+    await prisma.notification.create({
+      data: {
+        userId: campaign.shelter.userId,
+        type: "SYSTEM",
+        title: "Kampanyanız Reddedildi",
+        message: `"${campaign.title}" kampanyanız uygun bulunmadığı için yayına alınmadı.`,
+        link: `/shelter-panel/kampanyalar`,
+      },
+    });
+  }
+
+  return c.json(updated);
+}
+
 // ─── ADMIN — TÜM KAMPANYALAR ──────────────────────────────────────────────────
 
 export async function adminListCampaigns(c: Context) {
@@ -484,8 +580,11 @@ export async function adminListCampaigns(c: Context) {
   const search     = query.search?.trim();
   const isFeatured = query.isFeatured === "true" ? true : query.isFeatured === "false" ? false : undefined;
 
+  const statusFilter = query.status?.trim() || undefined;
+
   const where: any = {
     ...(isFeatured !== undefined && { isFeatured }),
+    ...(statusFilter && { status: statusFilter }),
     ...(search && {
       OR: [
         { title: { contains: search, mode: "insensitive" } },
@@ -524,5 +623,21 @@ export async function adminListCampaigns(c: Context) {
   return c.json({
     campaigns,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
+}
+
+// ─── YARDIMCI ─────────────────────────────────────────────────────────────────
+
+async function notifyAdmins(data: { type: string; title: string; message: string; link: string }) {
+  const admins = await prisma.user.findMany({ where: { role: "ADMIN" }, select: { id: true } });
+  if (admins.length === 0) return;
+  await prisma.notification.createMany({
+    data: admins.map(admin => ({
+      userId: admin.id,
+      type: data.type as any,
+      title: data.title,
+      message: data.message,
+      link: data.link,
+    })),
   });
 }

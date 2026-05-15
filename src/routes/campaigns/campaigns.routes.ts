@@ -15,6 +15,8 @@ import {
     featureCampaign,
     deleteCampaign,
     adminListCampaigns,
+    approveCampaign,
+    rejectCampaign,
 } from "./campaigns.handler.js";
 import { zv } from "../../lib/zValidator.js";
 import { idParam } from "../../lib/zSchemas.js";
@@ -45,6 +47,8 @@ campaigns.post("/:id/activate", requireAuth, requireRole("SHELTER", "ADMIN"), zv
 campaigns.post("/:id/deactivate", requireAuth, requireRole("SHELTER", "ADMIN"), zv("param", idParam), deactivateCampaign);
 
 campaigns.get("/admin/all", requireAuth, requireRole("ADMIN"), adminListCampaigns);
+campaigns.post("/:id/approve", requireAuth, requireRole("ADMIN"), zv("param", idParam), approveCampaign);
+campaigns.post("/:id/reject",  requireAuth, requireRole("ADMIN"), zv("param", idParam), rejectCampaign);
 campaigns.post("/:id/feature", requireAuth, requireRole("ADMIN"), zv("param", idParam), featureCampaign);
 campaigns.delete("/:id", requireAuth, requireRole("ADMIN"), zv("param", idParam), deleteCampaign);
 
