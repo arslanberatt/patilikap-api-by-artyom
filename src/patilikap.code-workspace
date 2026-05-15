@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "patilikap",
+			"path": "../.."
+		},
+		{
+			"name": "patilikap-rebuild-main",
+			"path": "../../../patilikap-rebuild-main"
+		}
+	],
+	"settings": {}
+}

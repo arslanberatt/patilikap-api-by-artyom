@@ -70,6 +70,9 @@ model Shelter {
   websiteUrl       String?
   locationLink     String?
   code             String?       @unique
+  slug             String?       @unique
+  charterDocUrl    String?
+  activityDocUrl   String?
   status           ShelterStatus @default(PENDING)
   campaigns        Campaign[]
   stories          ShelterStory[]

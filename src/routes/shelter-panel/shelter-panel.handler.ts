@@ -6,7 +6,7 @@ type AuthUser = { id: string; role: string };
 async function getShelterForUser(userId: string) {
   return prisma.shelter.findFirst({
     where: { userId },
-    select: { id: true, name: true, status: true, code: true },
+    select: { id: true, name: true, status: true, code: true, slug: true },
   });
 }
 
@@ -20,23 +20,25 @@ export async function getStats(c: Context) {
     return c.json({
       shelterStatus: shelter.status,
       shelterCode:   shelter.code ?? null,
+      shelterSlug:   shelter.slug ?? null,
       toplamBagis: 0,
       toplamHayirsever: 0,
       buAykiBagis: 0,
       aktifKampanya: 0,
+      toplamUrun: 0,
     });
   }
 
-  const campaignIds = await prisma.campaign.findMany({
+  const campaignIdList = await prisma.campaign.findMany({
     where: { shelterId: shelter.id },
     select: { id: true },
   }).then(r => r.map(c => c.id));
 
-  const [toplamBagis, toplamHayirsever, buAykiBagis, aktifKampanya] = await Promise.all([
+  const [toplamBagis, toplamHayirsever, buAykiBagis, aktifKampanya, toplamUrun] = await Promise.all([
     prisma.order.aggregate({
       where: {
         paymentStatus: "PAID",
-        items: { some: { campaignId: { in: campaignIds } } },
+        items: { some: { campaignId: { in: campaignIdList } } },
       },
       _sum: { totalAmount: true },
     }),
@@ -46,14 +48,14 @@ export async function getStats(c: Context) {
       where: {
         paymentStatus: "PAID",
         userId: { not: null },
-        items: { some: { campaignId: { in: campaignIds } } },
+        items: { some: { campaignId: { in: campaignIdList } } },
       },
     }).then(r => r.length),
 
     prisma.order.aggregate({
       where: {
         paymentStatus: "PAID",
-        items: { some: { campaignId: { in: campaignIds } } },
+        items: { some: { campaignId: { in: campaignIdList } } },
         createdAt: {
           gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
         },
@@ -64,15 +66,25 @@ export async function getStats(c: Context) {
     prisma.campaign.count({
       where: { shelterId: shelter.id, status: "ACTIVE" },
     }),
+
+    prisma.orderItem.aggregate({
+      where: {
+        campaignId: { in: campaignIdList },
+        order: { paymentStatus: "PAID" },
+      },
+      _sum: { quantity: true },
+    }),
   ]);
 
   return c.json({
     shelterStatus: "APPROVED",
     shelterCode:   shelter.code ?? null,
+    shelterSlug:   shelter.slug ?? null,
     toplamBagis:       Number(toplamBagis._sum.totalAmount ?? 0),
     toplamHayirsever,
     buAykiBagis:       Number(buAykiBagis._sum.totalAmount ?? 0),
     aktifKampanya,
+    toplamUrun:        Number(toplamUrun._sum.quantity ?? 0),
   });
 }
 

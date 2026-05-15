@@ -3,6 +3,7 @@ import { prisma } from "../../lib/prisma.js";
 import { errors } from "../../lib/errors.js";
 import { activityMessages } from "../../lib/activity.js";
 import { deleteFile } from "../../lib/bunny.js";
+import { generateUniqueSlug } from "../../lib/slug.js";
 
 
 export async function getShelters(c: Context) {
@@ -80,6 +81,9 @@ export async function getAdminShelters(c: Context) {
         phone: true,
         status: true,
         code: true,
+        slug: true,
+        charterDocUrl: true,
+        activityDocUrl: true,
         coverImageUrl: true,
         documentUrls: true,
         createdAt: true,
@@ -100,7 +104,7 @@ export async function getShelterById(c: Context) {
   const { id } = c.req.param();
 
   const shelter = await prisma.shelter.findFirst({
-    where: { id },
+    where: { OR: [{ id }, { slug: id }] },
     select: {
       id: true,
       name: true,
@@ -147,6 +151,8 @@ export async function createShelter(c: Context) {
     websiteUrl?: string;
     locationLink?: string;
     documentUrls?: string[];
+    charterDocUrl?: string;
+    activityDocUrl?: string;
   };
 
   const existing = await prisma.shelter.findFirst({
@@ -159,11 +165,14 @@ export async function createShelter(c: Context) {
   const codeConflict = await prisma.shelter.findUnique({ where: { code } });
   if (codeConflict) code = generateShelterCode();
 
+  const slug = generateUniqueSlug(body.name);
+
   const shelter = await prisma.shelter.create({
     data: {
       userId:           user.id,
       status:           "PENDING",
       code,
+      slug,
       name:             body.name,
       city:             body.city,
       district:         body.district,
@@ -176,6 +185,8 @@ export async function createShelter(c: Context) {
       websiteUrl:       body.websiteUrl   || null,
       locationLink:     body.locationLink,
       documentUrls:     body.documentUrls,
+      charterDocUrl:    body.charterDocUrl || null,
+      activityDocUrl:   body.activityDocUrl || null,
     },
   });
 

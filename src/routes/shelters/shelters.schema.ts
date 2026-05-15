@@ -23,6 +23,8 @@ export const createShelterBody = z.object({
   websiteUrl:       z.string().url().optional().or(z.literal('')),
   locationLink:     z.string().max(500).optional(),
   documentUrls:     z.array(z.string().url()).optional(),
+  charterDocUrl:    z.string().url().optional(),
+  activityDocUrl:   z.string().url().optional(),
 });
 
 const shelterBase = z.object({
