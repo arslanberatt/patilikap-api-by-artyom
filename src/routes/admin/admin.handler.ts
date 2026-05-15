@@ -60,12 +60,25 @@ export async function getUserById(c: Context) {
           phone: true, description: true, address: true, authorizedPerson: true,
           charterDocUrl: true, activityDocUrl: true, documentUrls: true, createdAt: true,
           code: true, slug: true,
+          campaigns: {
+            orderBy: { createdAt: "desc" as const },
+            take: 10,
+            select: { id: true, title: true, slug: true, status: true, createdAt: true },
+          },
         },
       },
       orders: {
         orderBy: { createdAt: "desc" },
         take: 5,
-        select: { id: true, orderNumber: true, paymentStatus: true, totalAmount: true, createdAt: true },
+        select: {
+          id: true, orderNumber: true, paymentStatus: true, totalAmount: true, createdAt: true,
+          items: {
+            select: {
+              id: true, productName: true, quantity: true, unitPrice: true,
+              campaign: { select: { id: true, title: true } },
+            },
+          },
+        },
       },
       storeOrders: {
         orderBy: { createdAt: "desc" },
