@@ -62,6 +62,25 @@ export async function uploadDocument(c: Context) {
 }
 
 
+export async function uploadReceiptPublic(c: Context) {
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File | null;
+
+    if (!file) return c.json(errors.BAD_REQUEST, 400);
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    const isImage = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+    const isPdf = file.type === "application/pdf";
+    if (!isImage && !isPdf) return c.json({ error: "Sadece resim veya PDF yükleyebilirsiniz" }, 400);
+    if (buffer.length > 10 * 1024 * 1024) return c.json({ error: "Dosya 10MB'dan küçük olmalıdır" }, 400);
+
+    const result = await uploadFile(buffer, file.type, "receipts" as ImageFolder);
+    if (!result.success) return c.json(errors.SERVER_ERROR, 500);
+
+    return c.json({ url: result.url }, 201);
+}
+
 export async function uploadVideo(c: Context) {
     const formData = await c.req.formData();
     const file = formData.get("file") as File | null;

@@ -4,6 +4,7 @@ import { errors } from "../../lib/errors.js";
 import { activityMessages } from "../../lib/activity.js";
 import { sendEmail, buildOrderConfirmationEmail, buildOrderCancelledEmail, buildShelterDonationEmail } from "../../lib/email.js";
 import crypto from "crypto";
+import { generatePaytrToken } from "../paytr/paytr.handler.js";
 
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
 
@@ -176,9 +177,20 @@ export async function createOrder(c: Context) {
     }
   }
 
-  const totalAmount = campaignProducts.reduce((sum, { cp, quantity }) => {
+  const baseTotal = campaignProducts.reduce((sum, { cp, quantity }) => {
     return sum + Number(cp!.product.price) * quantity;
   }, 0);
+
+  // EFT havale indirimi — paytxSurchargePercent kadar indirim
+  let eftDiscount = 0;
+  if (body.paymentMethod === "EFT") {
+    const config = await prisma.systemConfig.findFirst({ where: { isDefault: true } });
+    if (config?.paytxSurchargePercent) {
+      eftDiscount = Math.round(baseTotal * Number(config.paytxSurchargePercent)) / 100;
+    }
+  }
+
+  const totalAmount = Math.max(0, baseTotal - eftDiscount);
 
   const orderNumber = generateOrderNumber();
   const cancelToken = generateToken();
@@ -266,27 +278,30 @@ export async function createOrder(c: Context) {
   }
 
   if (body.paymentMethod === "PAYTR") {
-    return c.json({
-      order,
-      paytr: {
-        orderNumber,
-        email: recipientEmail,
-        amount: Math.round(totalAmount * 100),
-        userName: body.name,
-        userPhone: body.phone,
-        userAddress: body.address,
-        userCity: body.city,
-        userIp: body.userIp,
-        basketItems: campaignProducts.map(({ cp, quantity }) => [
-          cp!.product.name,
-          String(Number(cp!.product.price).toFixed(2)),
-          quantity,
-        ]),
-      },
-    }, 201);
+    const paytrResult = await generatePaytrToken({
+      orderNumber,
+      email:       recipientEmail || "misafir@patilikap.com",
+      amount:      Math.round(totalAmount * 100),
+      userName:    (user?.name || body.name) || "Müşteri",
+      userPhone:   body.phone || "05000000000",
+      userAddress: body.address || "Türkiye",
+      userCity:    body.city || "",
+      userIp:      body.userIp || "127.0.0.1",
+      basketItems: campaignProducts.map(({ cp, quantity }) => [
+        cp!.product.name,
+        String(Number(cp!.product.price).toFixed(2)),
+        quantity,
+      ]),
+    });
+
+    if (!paytrResult.token) {
+      return c.json({ error: paytrResult.error || "PayTR token alınamadı" }, 500);
+    }
+
+    return c.json({ orderNumber, paytrToken: paytrResult.token, trackingToken }, 201);
   }
 
-  return c.json({ order }, 201);
+  return c.json({ orderNumber, trackingToken }, 201);
 }
 
 // ─── GİRİŞ YAPMIŞ KULLANICI ───────────────────────────────────────────────────
@@ -675,6 +690,145 @@ export async function adminDeleteOrder(c: Context) {
       targetName: order.orderNumber,
       message: activityMessages.ORDER_DELETED(order.orderNumber),
     },
+  });
+
+  return c.json({ success: true });
+}
+
+// ─── EFT ONAY / RED ───────────────────────────────────────────────────────────
+
+export async function approveDonationEft(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+
+  const order = await prisma.order.findFirst({
+    where: { id },
+    include: { items: true, user: true },
+  });
+  if (!order) return c.json(errors.NOT_FOUND, 404);
+  if (order.paymentMethod !== "EFT") return c.json({ error: "Bu sipariş EFT ile ödenmedi" }, 400);
+  if (order.paymentStatus !== "WAITING_APPROVAL") return c.json({ error: "Onay bekleyen EFT siparişi değil" }, 400);
+
+  await prisma.order.update({
+    where: { id },
+    data: { paymentStatus: "PAID", isAdminRead: true, expiresAt: null },
+  });
+
+  // currentStock artır
+  for (const item of order.items) {
+    await prisma.campaignProduct.updateMany({
+      where: { campaignId: (item as any).campaignId, productId: (item as any).productId },
+      data: { currentStock: { increment: Number((item as any).quantity) } },
+    });
+  }
+
+  await checkCampaignProgress(order.id);
+  await notifyShelterOwner(order);
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "ORDER_EFT_APPROVED",
+      targetType: "Order",
+      targetId: order.id,
+      targetName: order.orderNumber,
+      message: `${order.orderNumber} numaralı bağış siparişi EFT ödemesi onaylandı`,
+    },
+  });
+
+  if (order.userId) {
+    await prisma.notification.create({
+      data: {
+        userId: order.userId,
+        type: "ORDER_STATUS",
+        title: "Ödemeniz Onaylandı",
+        message: `${order.orderNumber} numaralı bağışınızın EFT ödemesi onaylandı`,
+        link: `/orders/${order.id}`,
+      },
+    });
+  }
+
+  return c.json({ success: true });
+}
+
+export async function rejectDonationEft(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+
+  const order = await prisma.order.findFirst({
+    where: { id },
+    include: { user: true },
+  });
+  if (!order) return c.json(errors.NOT_FOUND, 404);
+  if (order.paymentMethod !== "EFT") return c.json({ error: "Bu sipariş EFT ile ödenmedi" }, 400);
+  if (order.paymentStatus !== "WAITING_APPROVAL") return c.json({ error: "Onay bekleyen EFT siparişi değil" }, 400);
+
+  const body = await c.req.json().catch(() => ({})) as { reason?: string };
+
+  await prisma.order.update({
+    where: { id },
+    data: { paymentStatus: "CANCELLED", isAdminRead: true },
+  });
+
+  const email = order.user?.email || order.guestEmail || "";
+  const name = order.user?.name || order.guestName || "Müşteri";
+  if (email) {
+    await sendEmail({
+      to: email,
+      subject: `Siparişiniz İptal Edildi — ${order.orderNumber}`,
+      html: buildOrderCancelledEmail({
+        orderNumber: order.orderNumber,
+        name,
+        reason: body.reason || "EFT ödemesi doğrulanamadı",
+      }),
+    });
+  }
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "ORDER_EFT_REJECTED",
+      targetType: "Order",
+      targetId: order.id,
+      targetName: order.orderNumber,
+      message: `${order.orderNumber} numaralı bağış siparişi EFT ödemesi reddedildi`,
+    },
+  });
+
+  return c.json({ success: true });
+}
+
+// ─── DEKONT UPLOAD ─────────────────────────────────────────────────────────────
+
+export async function uploadDonationReceipt(c: Context) {
+  const user = c.get("user") as { id: string } | null;
+  const { orderNumber } = c.req.param();
+
+  const order = await prisma.order.findFirst({ where: { orderNumber } });
+  if (!order) return c.json(errors.NOT_FOUND, 404);
+
+  const body = await c.req.json() as { receiptUrl: string; trackingToken?: string };
+
+  const isOwner = user && order.userId === user.id;
+  const isGuest = !order.userId && body.trackingToken && order.trackingToken === body.trackingToken;
+
+  if (!isOwner && !isGuest) return c.json(errors.FORBIDDEN, 403);
+  if (!body.receiptUrl) return c.json(errors.BAD_REQUEST, 400);
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { receiptUrl: body.receiptUrl, isAdminRead: false, expiresAt: null },
+  });
+
+  await notifyAdmins({
+    type: "PAYMENT_RECEIVED",
+    title: "Dekont Yüklendi",
+    message: `${orderNumber} numaralı bağış siparişi için dekont yüklendi`,
+    link: `/admin/orders/${order.id}`,
   });
 
   return c.json({ success: true });

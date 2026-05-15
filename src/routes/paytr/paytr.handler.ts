@@ -20,6 +20,80 @@ function getPaytrEnv() {
 
 // ─── TOKEN ────────────────────────────────────────────────────────────────────
 
+export async function generatePaytrToken(params: {
+  orderNumber: string;
+  email: string;
+  amount: number; // kuruş cinsinden (TL × 100)
+  userName: string;
+  userPhone: string;
+  userAddress: string;
+  userCity: string;
+  userIp: string;
+  basketItems: [string, string, number][];
+}): Promise<{ token?: string; error?: string }> {
+  const { merchantId, merchantKey, merchantSalt, testMode, appUrl, frontendUrl } = getPaytrEnv();
+
+  const email      = params.email      || "misafir@patilikap.com";
+  const userName   = params.userName   || "Müşteri";
+  const userPhone  = params.userPhone  || "05000000000";
+  const userIp     = params.userIp     || "127.0.0.1";
+  const userAddress = params.userAddress || "Türkiye";
+
+  const userBasket = Buffer.from(JSON.stringify(params.basketItems)).toString("base64");
+  const hashStr =
+    merchantId +
+    userIp +
+    params.orderNumber +
+    email +
+    String(params.amount) +
+    userBasket +
+    "0" +   // no_installment
+    "12" +  // max_installment
+    "TL" +  // currency
+    testMode;
+
+  const paytrToken = hashStr + merchantSalt;
+  const token = crypto.createHmac("sha256", merchantKey).update(paytrToken).digest("base64");
+
+  const formParams = new URLSearchParams({
+    merchant_id:          merchantId,
+    user_ip:              userIp,
+    merchant_oid:         params.orderNumber,
+    email,
+    payment_amount:       String(params.amount),
+    paytr_token:          token,
+    user_basket:          userBasket,
+    debug_on:             "0",
+    no_installment:       "0",
+    max_installment:      "12",
+    user_name:            userName,
+    user_address:         userAddress,
+    user_phone:           userPhone,
+    merchant_ok_url:      `${frontendUrl}/odeme-basarili`,
+    merchant_fail_url:    `${frontendUrl}/odeme-basarisiz`,
+    merchant_notify_url:  `${appUrl}/api/paytr/callback`,
+    timeout_limit:        "30",
+    currency:             "TL",
+    test_mode:            testMode,
+    lang:                 "tr",
+    iframe_v2:            "1",
+  });
+
+  const response = await fetch("https://www.paytr.com/odeme/api/get-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formParams.toString(),
+  });
+
+  const data = await response.json() as { status: string; token?: string; reason?: string };
+
+  if (data.status !== "success" || !data.token) {
+    return { error: data.reason || "PayTR token alınamadı" };
+  }
+
+  return { token: data.token };
+}
+
 export async function getPaytrToken(c: Context) {
   const body = await c.req.json() as {
     orderNumber: string;
@@ -33,59 +107,13 @@ export async function getPaytrToken(c: Context) {
     basketItems: [string, string, number][];
   };
 
-  const { merchantId, merchantKey, merchantSalt, testMode, appUrl, frontendUrl } = getPaytrEnv();
+  const result = await generatePaytrToken(body);
 
-  const userBasket = Buffer.from(JSON.stringify(body.basketItems)).toString("base64");
-  const hashStr =
-    merchantId +
-    body.userIp +
-    body.orderNumber +
-    body.email +
-    String(body.amount) +
-    userBasket +
-    "0" +        // no_installment
-    "0" +        // max_installment
-    "TL" +       // currency
-    testMode;
-
-  const paytrToken = hashStr + merchantSalt;
-  const token = crypto.createHmac("sha256", merchantKey).update(paytrToken).digest("base64");
-
-  const params = new URLSearchParams({
-    merchant_id: merchantId,
-    user_ip: body.userIp,
-    merchant_oid: body.orderNumber,
-    email: body.email,
-    payment_amount: String(body.amount),
-    paytr_token: token,
-    user_basket: userBasket,
-    debug_on: "0",
-    no_installment: "0",
-    max_installment: "0",
-    user_name: body.userName,
-    user_address: body.userAddress,
-    user_phone: body.userPhone,
-    merchant_ok_url: `${frontendUrl}/payment/success`,
-    merchant_fail_url: `${frontendUrl}/payment/fail`,
-    timeout_limit: "30",
-    currency: "TL",
-    test_mode: testMode,
-    lang: "tr",
-  });
-
-  const response = await fetch("https://www.paytr.com/odeme/api/get-token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-
-  const data = await response.json() as { status: string; token?: string; reason?: string };
-
-  if (data.status !== "success" || !data.token) {
-    return c.json({ error: data.reason || "PayTR token alınamadı" }, 500);
+  if (result.error || !result.token) {
+    return c.json({ error: result.error || "PayTR token alınamadı" }, 500);
   }
 
-  return c.json({ token: data.token });
+  return c.json({ token: result.token });
 }
 
 // ─── CALLBACK ─────────────────────────────────────────────────────────────────
@@ -372,6 +400,73 @@ export async function paytrRefund(c: Context) {
   });
 
   return c.json({ success: true });
+}
+
+// ─── DURUM SORGU ──────────────────────────────────────────────────────────────
+
+export async function paytrStatusQuery(c: Context) {
+  const admin = c.get("user") as { id: string };
+  const { merchantId, merchantKey, merchantSalt } = getPaytrEnv();
+
+  const body = await c.req.json() as { orderId: string; orderType: "donation" | "store" };
+
+  let order: any = null;
+  if (body.orderType === "donation") {
+    order = await prisma.order.findFirst({ where: { id: body.orderId } });
+  } else {
+    order = await prisma.storeOrder.findFirst({ where: { id: body.orderId } });
+  }
+
+  if (!order) return c.json(errors.NOT_FOUND, 404);
+  if (!order.paytxMerchantOid && order.paymentMethod !== "PAYTR") {
+    return c.json({ error: "Bu sipariş PayTR ile ödenmedi" }, 400);
+  }
+
+  const merchantOid = order.paytxMerchantOid || order.orderNumber;
+  const hashStr = merchantId + merchantOid + merchantSalt;
+  const paytrToken = crypto.createHmac("sha256", merchantKey).update(hashStr).digest("base64");
+
+  const params = new URLSearchParams({
+    merchant_id:  merchantId,
+    merchant_oid: merchantOid,
+    paytr_token:  paytrToken,
+    merchant_key: merchantKey,
+  });
+
+  const response = await fetch("https://www.paytr.com/odeme/durum-sorgu", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+
+  const data = await response.json() as {
+    status: string;
+    payment_status?: string;
+    total_amount?: string;
+    err_no?: string;
+    err_msg?: string;
+  };
+
+  if (data.status !== "success") {
+    return c.json({ error: data.err_msg || "Durum sorgulanamadı" }, 500);
+  }
+
+  // PayTR success dönerse ve siparişimiz hâlâ WAITING_APPROVAL'daysa güncelle
+  if (data.payment_status === "success" && order.paymentStatus === "WAITING_APPROVAL") {
+    if (body.orderType === "donation") {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { paymentStatus: "PAID", paytxMerchantOid: merchantOid, isAdminRead: false },
+      });
+    } else {
+      await prisma.storeOrder.update({
+        where: { id: order.id },
+        data: { paymentStatus: "PAID", orderStatus: "CONFIRMED", paytxMerchantOid: merchantOid, isAdminRead: false },
+      });
+    }
+  }
+
+  return c.json({ paymentStatus: data.payment_status, totalAmount: data.total_amount });
 }
 
 // ─── KAMPANYA PROGRESS KONTROLÜ ───────────────────────────────────────────────

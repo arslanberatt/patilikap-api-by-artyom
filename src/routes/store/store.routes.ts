@@ -22,6 +22,9 @@ import {
   updateStoreOrderStatus,
   addShipment,
   approveStoreCancel,
+  approveStoreEft,
+  rejectStoreEft,
+  uploadStoreReceipt,
   adminListShipments,
   adminUpdateShipment,
   adminGetAllProducts,
@@ -75,6 +78,7 @@ store.delete("/reviews/:id", requireAuth, zv("param", idParam), deleteMyReview);
 store.post("/orders", zv("json", createStoreOrderBody), createStoreOrder);
 store.get("/orders/track/:token", trackStoreByToken);
 store.post("/orders/cancel/:token", cancelStoreByToken);
+store.post("/orders/:orderNumber/receipt", uploadStoreReceipt);
 
 // ─── SİPARİŞ — GİRİŞ YAPMIŞ ─────────────────────────────────────────────────
 store.get("/orders/my", requireAuth, zv("query", myStoreOrdersQuery), getMyStoreOrders);
@@ -86,6 +90,8 @@ store.get("/admin/orders", requireAuth, requireRole("ADMIN"), zv("query", adminS
 store.patch("/admin/orders/:id/status", requireAuth, requireRole("ADMIN"), zv("param", idParam), zv("json", updateStoreOrderStatusBody), updateStoreOrderStatus);
 store.post("/admin/orders/:id/ship", requireAuth, requireRole("ADMIN"), zv("param", idParam), zv("json", addShipmentBody), addShipment);
 store.post("/admin/orders/:id/approve-cancel", requireAuth, requireRole("ADMIN"), zv("param", idParam), approveStoreCancel);
+store.post("/admin/orders/:id/approve-eft", requireAuth, requireRole("ADMIN"), zv("param", idParam), approveStoreEft);
+store.post("/admin/orders/:id/reject-eft", requireAuth, requireRole("ADMIN"), zv("param", idParam), rejectStoreEft);
 store.delete("/admin/orders/:id", requireAuth, requireRole("ADMIN"), zv("param", idParam), adminDeleteStoreOrder);
 
 // ─── ADMIN — KARGO ───────────────────────────────────────────────────────────

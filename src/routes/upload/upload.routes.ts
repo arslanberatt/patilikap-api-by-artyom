@@ -5,11 +5,15 @@ import {
   uploadImages,
   uploadDocument,
   uploadVideo,
+  uploadReceiptPublic,
 } from "./upload.handler.js";
 
 const upload = new Hono();
 
-// Tüm upload endpoint'leri giriş gerektirir
+// Dekont upload — misafir kullanıcılar da yükleyebilir (auth gerektirmez)
+upload.post("/receipt-public", uploadReceiptPublic);
+
+// Geri kalan endpoint'ler giriş gerektirir
 upload.use("*", requireAuth);
 
 upload.post("/image", uploadImage);       // tek resim

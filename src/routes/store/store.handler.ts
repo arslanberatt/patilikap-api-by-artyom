@@ -4,6 +4,7 @@ import { errors } from "../../lib/errors.js";
 import { activityMessages } from "../../lib/activity.js";
 import { sendEmail, buildOrderConfirmationEmail, buildOrderCancelledEmail, buildShippingEmail } from "../../lib/email.js";
 import crypto from "crypto";
+import { generatePaytrToken } from "../paytr/paytr.handler.js";
 
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
 
@@ -444,14 +445,10 @@ export async function createStoreOrder(c: Context) {
         shippingFee = 0;
     }
 
-    // EFT indirimi
+    // EFT havale indirimi — paytxSurchargePercent yüzdesi kadar indirim
     let discountAmount = 0;
-    if (body.paymentMethod === "EFT") {
-        const cashDiscount = await prisma.cashDiscount.findFirst({
-            where: { isActive: true, threshold: { lte: subtotal } },
-            orderBy: { threshold: "desc" },
-        });
-        if (cashDiscount) discountAmount = cashDiscount.amount;
+    if (body.paymentMethod === "EFT" && config?.paytxSurchargePercent) {
+        discountAmount = Math.round(subtotal * Number(config.paytxSurchargePercent)) / 100;
     }
 
     // Kupon
@@ -601,29 +598,31 @@ export async function createStoreOrder(c: Context) {
         }),
     });
 
-    // PayTR seçildiyse token bilgilerini dön
     if (body.paymentMethod === "PAYTR") {
-        return c.json({
-            order,
-            paytr: {
-                orderNumber,
-                email: recipientEmail,
-                amount: Math.round(totalAmount * 100),
-                userName: body.name,
-                userPhone: body.phone,
-                userAddress: body.address,
-                userCity: body.city,
-                userIp: body.userIp,
-                basketItems: products.map(({ product, quantity }) => [
-                    product!.name,
-                    String(Number(product!.price).toFixed(2)),
-                    quantity,
-                ]),
-            },
-        }, 201);
+        const paytrResult = await generatePaytrToken({
+            orderNumber,
+            email:       recipientEmail,
+            amount:      Math.round(totalAmount * 100),
+            userName:    resolved.name!,
+            userPhone:   resolved.phone!,
+            userAddress: resolved.address!,
+            userCity:    resolved.city!,
+            userIp:      body.userIp || "127.0.0.1",
+            basketItems: products.map(({ product, quantity }) => [
+                product!.name,
+                String(Number(product!.price).toFixed(2)),
+                quantity,
+            ]),
+        });
+
+        if (!paytrResult.token) {
+            return c.json({ error: paytrResult.error || "PayTR token alınamadı" }, 500);
+        }
+
+        return c.json({ orderNumber, paytrToken: paytrResult.token, trackingToken }, 201);
     }
 
-    return c.json({ order }, 201);
+    return c.json({ orderNumber, trackingToken }, 201);
 }
 
 // ─── GİRİŞ YAPMIŞ KULLANICI ───────────────────────────────────────────────────
@@ -1546,6 +1545,163 @@ export async function deleteMyReview(c: Context) {
     if (!review) return c.json(errors.NOT_FOUND, 404);
 
     await prisma.productReview.delete({ where: { id } });
+    return c.json({ success: true });
+}
+
+// ─── EFT ONAY / RED ───────────────────────────────────────────────────────────
+
+export async function approveStoreEft(c: Context) {
+    const admin = c.get("user") as { id: string; name: string };
+    const { id } = c.req.param();
+
+    const order = await prisma.storeOrder.findFirst({
+        where: { id },
+        include: { items: true, user: true },
+    });
+    if (!order) return c.json(errors.NOT_FOUND, 404);
+    if (order.paymentMethod !== "EFT") return c.json({ error: "Bu sipariş EFT ile ödenmedi" }, 400);
+    if (order.paymentStatus !== "WAITING_APPROVAL") return c.json({ error: "Onay bekleyen EFT siparişi değil" }, 400);
+
+    await prisma.storeOrder.update({
+        where: { id },
+        data: { paymentStatus: "PAID", orderStatus: "CONFIRMED", isAdminRead: true, expiresAt: null },
+    });
+
+    // Stok düş
+    for (const item of order.items) {
+        await prisma.product.update({
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } },
+        });
+    }
+
+    await prisma.orderStatusLog.create({
+        data: {
+            orderId: order.id,
+            fromStatus: "PENDING",
+            toStatus: "CONFIRMED",
+            note: "EFT ödemesi admin tarafından onaylandı",
+            changedBy: admin.id,
+        },
+    });
+
+    await prisma.activityLog.create({
+        data: {
+            actorId: admin.id,
+            actorName: admin.name,
+            actorType: "ADMIN",
+            action: "STORE_ORDER_EFT_APPROVED",
+            targetType: "StoreOrder",
+            targetId: order.id,
+            targetName: order.orderNumber,
+            message: `${order.orderNumber} numaralı mağaza siparişi EFT ödemesi onaylandı`,
+        },
+    });
+
+    if (order.userId) {
+        await prisma.notification.create({
+            data: {
+                userId: order.userId,
+                type: "ORDER_STATUS",
+                title: "Ödemeniz Onaylandı",
+                message: `${order.orderNumber} numaralı siparişinizin EFT ödemesi onaylandı`,
+                link: `/orders/store/${order.id}`,
+            },
+        });
+    }
+
+    return c.json({ success: true });
+}
+
+export async function rejectStoreEft(c: Context) {
+    const admin = c.get("user") as { id: string; name: string };
+    const { id } = c.req.param();
+
+    const order = await prisma.storeOrder.findFirst({
+        where: { id },
+        include: { user: true },
+    });
+    if (!order) return c.json(errors.NOT_FOUND, 404);
+    if (order.paymentMethod !== "EFT") return c.json({ error: "Bu sipariş EFT ile ödenmedi" }, 400);
+    if (order.paymentStatus !== "WAITING_APPROVAL") return c.json({ error: "Onay bekleyen EFT siparişi değil" }, 400);
+
+    const body = await c.req.json().catch(() => ({})) as { reason?: string };
+
+    await prisma.storeOrder.update({
+        where: { id },
+        data: { paymentStatus: "CANCELLED", orderStatus: "CANCELLED", isAdminRead: true },
+    });
+
+    await prisma.orderStatusLog.create({
+        data: {
+            orderId: order.id,
+            fromStatus: "PENDING",
+            toStatus: "CANCELLED",
+            note: body.reason ? `EFT reddedildi: ${body.reason}` : "EFT ödemesi admin tarafından reddedildi",
+            changedBy: admin.id,
+        },
+    });
+
+    const email = order.user?.email || order.guestEmail || "";
+    const name = order.user?.name || order.guestName || "Müşteri";
+    if (email) {
+        await sendEmail({
+            to: email,
+            subject: `Siparişiniz İptal Edildi — ${order.orderNumber}`,
+            html: buildOrderCancelledEmail({
+                orderNumber: order.orderNumber,
+                name,
+                reason: body.reason || "EFT ödemesi doğrulanamadı",
+            }),
+        });
+    }
+
+    await prisma.activityLog.create({
+        data: {
+            actorId: admin.id,
+            actorName: admin.name,
+            actorType: "ADMIN",
+            action: "STORE_ORDER_EFT_REJECTED",
+            targetType: "StoreOrder",
+            targetId: order.id,
+            targetName: order.orderNumber,
+            message: `${order.orderNumber} numaralı mağaza siparişi EFT ödemesi reddedildi`,
+        },
+    });
+
+    return c.json({ success: true });
+}
+
+// ─── DEKONT UPLOAD ─────────────────────────────────────────────────────────────
+
+export async function uploadStoreReceipt(c: Context) {
+    const user = c.get("user") as { id: string } | null;
+    const { orderNumber } = c.req.param();
+
+    const order = await prisma.storeOrder.findFirst({ where: { orderNumber } });
+    if (!order) return c.json(errors.NOT_FOUND, 404);
+
+    // Yetki: giriş yapmış kullanıcı kendi siparişi || trackingToken ile guest
+    const body = await c.req.json() as { receiptUrl: string; trackingToken?: string };
+
+    const isOwner = user && order.userId === user.id;
+    const isGuest = !order.userId && body.trackingToken && order.trackingToken === body.trackingToken;
+
+    if (!isOwner && !isGuest) return c.json(errors.FORBIDDEN, 403);
+    if (!body.receiptUrl) return c.json(errors.BAD_REQUEST, 400);
+
+    await prisma.storeOrder.update({
+        where: { id: order.id },
+        data: { receiptUrl: body.receiptUrl, isAdminRead: false, expiresAt: null },
+    });
+
+    await notifyAdmins({
+        type: "PAYMENT_RECEIVED",
+        title: "Dekont Yüklendi",
+        message: `${orderNumber} numaralı mağaza siparişi için dekont yüklendi`,
+        link: `/admin/store/orders/${order.id}`,
+    });
+
     return c.json({ success: true });
 }
 
