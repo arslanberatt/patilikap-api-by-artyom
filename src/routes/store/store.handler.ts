@@ -677,7 +677,12 @@ export async function getStoreOrderById(c: Context) {
 
     const order = await prisma.storeOrder.findFirst({
         where: { id },
-        include: { items: true, shipment: true, statusLogs: true },
+        include: {
+            items: true,
+            shipment: true,
+            statusLogs: true,
+            user: { select: { id: true, name: true, email: true, phone: true } },
+        },
     });
 
     if (!order) return c.json(errors.NOT_FOUND, 404);
@@ -932,7 +937,7 @@ export async function getAllStoreOrders(c: Context) {
                 receiptUrl: true,
                 couponCode: true,
                 createdAt: true,
-                user: { select: { id: true, name: true, email: true } },
+                user: { select: { id: true, name: true, email: true, phone: true } },
                 shipment: { select: { provider: true, trackingNumber: true, status: true } },
                 items: { select: { productName: true, quantity: true, unitPrice: true } },
             },
@@ -1618,7 +1623,7 @@ export async function adminListShipments(c: Context) {
                         orderNumber: true,
                         guestName: true,
                         guestEmail: true,
-                        user: { select: { id: true, name: true, email: true } },
+                        user: { select: { id: true, name: true, email: true, phone: true } },
                     },
                 },
             },
