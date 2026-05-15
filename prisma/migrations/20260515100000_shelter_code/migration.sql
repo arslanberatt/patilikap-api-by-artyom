@@ -1,5 +1,5 @@
--- AlterTable: Add code column to Shelter
-ALTER TABLE "Shelter" ADD COLUMN "code" TEXT;
+-- AlterTable: Add code column to Shelter (IF NOT EXISTS to be safe)
+ALTER TABLE "Shelter" ADD COLUMN IF NOT EXISTS "code" TEXT;
 
--- CreateIndex
-CREATE UNIQUE INDEX "Shelter_code_key" ON "Shelter"("code");
+-- CreateIndex (IF NOT EXISTS)
+CREATE UNIQUE INDEX IF NOT EXISTS "Shelter_code_key" ON "Shelter"("code");
