@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "../../lib/prisma.js";
 import { errors } from "../../lib/errors.js";
 import { activityMessages } from "../../lib/activity.js";
+import { sendEmail, buildShelterDonationEmail } from "../../lib/email.js";
 
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
 
@@ -159,6 +160,34 @@ async function handleDonationCallback(orderNumber: string, status: string) {
     }
 
     await checkCampaignProgress(order.items);
+
+    // Barınak sahibine bağış bildir
+    const firstCampaignId = order.items[0]?.campaignId;
+    if (firstCampaignId) {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id: firstCampaignId },
+        include: { shelter: { include: { user: true } } },
+      });
+      const shelterOwnerEmail = campaign?.shelter?.user?.email;
+      if (shelterOwnerEmail) {
+        await sendEmail({
+          to: shelterOwnerEmail,
+          subject: `Yeni Bağış Alındı — ${order.orderNumber}`,
+          html: buildShelterDonationEmail({
+            shelterName: campaign!.shelter.name,
+            donorName: order.user?.name || order.guestName || "Anonim",
+            orderNumber: order.orderNumber,
+            items: order.items.map((i) => ({
+              productName: i.productName,
+              quantity: Number(i.quantity),
+              unitPrice: Number(i.unitPrice),
+            })),
+            totalAmount: Number(order.totalAmount),
+            paymentMethod: "PAYTR",
+          }),
+        });
+      }
+    }
 
     // ActivityLog
     await prisma.activityLog.create({

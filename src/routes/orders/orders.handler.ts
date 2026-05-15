@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { prisma } from "../../lib/prisma.js";
 import { errors } from "../../lib/errors.js";
 import { activityMessages } from "../../lib/activity.js";
-import { sendEmail, buildOrderConfirmationEmail, buildOrderCancelledEmail } from "../../lib/email.js";
+import { sendEmail, buildOrderConfirmationEmail, buildOrderCancelledEmail, buildShelterDonationEmail } from "../../lib/email.js";
 import crypto from "crypto";
 
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
@@ -15,6 +15,45 @@ function generateOrderNumber(): string {
 
 function generateToken(): string {
   return crypto.randomUUID().replace(/-/g, "");
+}
+
+async function notifyShelterOwner(order: {
+  orderNumber: string;
+  paymentMethod: string;
+  totalAmount: unknown;
+  user?: { name?: string | null } | null;
+  guestName?: string | null;
+  items: { campaignId: string; productName: string; quantity: unknown; unitPrice: unknown }[];
+}) {
+  const firstCampaignId = order.items[0]?.campaignId;
+  if (!firstCampaignId) return;
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: firstCampaignId },
+    include: { shelter: { include: { user: true } } },
+  });
+
+  const shelterOwnerEmail = campaign?.shelter?.user?.email;
+  if (!shelterOwnerEmail) return;
+
+  const donorName = order.user?.name || order.guestName || "Anonim";
+
+  await sendEmail({
+    to: shelterOwnerEmail,
+    subject: `Yeni Bağış Alındı — ${order.orderNumber}`,
+    html: buildShelterDonationEmail({
+      shelterName: campaign.shelter.name,
+      donorName,
+      orderNumber: order.orderNumber,
+      items: order.items.map((i) => ({
+        productName: i.productName,
+        quantity: Number(i.quantity),
+        unitPrice: Number(i.unitPrice),
+      })),
+      totalAmount: Number(order.totalAmount),
+      paymentMethod: order.paymentMethod,
+    }),
+  });
 }
 
 // ─── PUBLIC ───────────────────────────────────────────────────────────────────
@@ -489,7 +528,7 @@ export async function updateOrderStatus(c: Context) {
     data: { paymentStatus: body.paymentStatus, isAdminRead: true },
   });
 
-  // PAID → currentStock artar + kampanya progress kontrol
+  // PAID → currentStock artar + kampanya progress kontrol + barınak mail
   if (body.paymentStatus === "PAID") {
     for (const item of order.items) {
       await prisma.campaignProduct.updateMany({
@@ -501,6 +540,7 @@ export async function updateOrderStatus(c: Context) {
       });
     }
     await checkCampaignProgress(order.id);
+    await notifyShelterOwner(order);
   }
 
   // CANCELLED → müşteriye mail + bildirim
