@@ -363,6 +363,50 @@ export async function addStockAlert(c: Context) {
 
 // ─── SİPARİŞ OLUŞTUR ──────────────────────────────────────────────────────────
 
+// ─── KUPON DOĞRULA (public) ──────────────────────────────────────────────────
+
+export async function validateCoupon(c: Context) {
+    const body = await c.req.json() as { code: string; subtotal: number };
+
+    const coupon = await prisma.coupon.findFirst({
+        where: {
+            code: body.code,
+            isActive: true,
+            AND: [
+                { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+                { OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }] },
+            ],
+        },
+    });
+
+    if (!coupon) {
+        return c.json({ valid: false, error: "Geçersiz veya süresi dolmuş kupon" }, 400);
+    }
+    if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
+        return c.json({ valid: false, error: "Bu kuponun kullanım limiti doldu" }, 400);
+    }
+    if (coupon.minOrderAmount && body.subtotal < Number(coupon.minOrderAmount)) {
+        return c.json({
+            valid: false,
+            error: `Bu kupon için minimum sipariş tutarı ₺${Number(coupon.minOrderAmount).toFixed(2)}`,
+        }, 400);
+    }
+
+    const value = Number(coupon.value);
+    const discountAmount = coupon.type === "PERCENTAGE"
+        ? Math.min(body.subtotal, (body.subtotal * value) / 100)
+        : Math.min(body.subtotal, value);
+
+    return c.json({
+        valid: true,
+        code: coupon.code,
+        type: coupon.type,
+        value,
+        discountAmount: Math.round(discountAmount * 100) / 100,
+        description: coupon.description ?? null,
+    });
+}
+
 export async function createStoreOrder(c: Context) {
     const user = c.get("user") as { id: string; name: string; email: string } | null;
 

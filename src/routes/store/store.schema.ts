@@ -37,6 +37,11 @@ export const createStoreOrderBody = z.object({
   receiptUrl: z.string().url().optional(),
 });
 
+export const validateCouponBody = z.object({
+  code:     z.string().min(1).max(50),
+  subtotal: z.number().min(0),
+});
+
 export const myStoreOrdersQuery = paginationQuery;
 
 export const adminStoreOrdersQuery = paginationQuery.extend({
