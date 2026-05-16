@@ -1,5 +1,8 @@
 services:
   # ─── API ────────────────────────────────────────────────────────────────────
+  # SSL + routing Dokploy/Traefik tarafından yönetilir.
+  # Domain ve cert ayarı Dokploy panelinden yapılır; nginx/certbot servisleri
+  # gereksiz (port çakışması yapıyordu).
   api:
     build: .
     container_name: patilikap-api-by-artyom
@@ -8,7 +11,7 @@ services:
     environment:
       - NODE_ENV=production
     ports:
-      - "3001:3001"
+      - "3001:3001"   # Dokploy/Traefik bu porta proxy yapar
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,37 +40,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── NGINX ──────────────────────────────────────────────────────────────────
-  nginx:
-    image: nginx:alpine
-    container_name: patilikap-nginx-by-artyom
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro          # SSL sertifikaları
-      - certbot-webroot:/var/www/certbot:ro    # Let's Encrypt doğrulama
-    depends_on:
-      - api
-    networks:
-      - patilikap-network
-
-  # ─── CERTBOT (SSL) ──────────────────────────────────────────────────────────
-  certbot:
-    image: certbot/certbot
-    container_name: patilikap-certbot
-    volumes:
-      - ./nginx/ssl:/etc/letsencrypt
-      - certbot-webroot:/var/www/certbot
-    # Manuel çalıştırılır: docker compose run certbot certonly ...
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-
 volumes:
   pgdata:
-    driver: local
-  certbot-webroot:
     driver: local
 
 networks:
