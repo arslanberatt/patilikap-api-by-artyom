@@ -1,9 +1,10 @@
 import { rateLimiter } from "hono-rate-limiter";
 
-// Genel API — 60 istek / dakika
+// Genel API — 300 istek / dakika
+// (admin paneli aynı anda 10+ liste/stat çağırıyor; SPA için 60 yetersiz)
 export const generalLimiter = rateLimiter({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: 300,
   keyGenerator: (c) => c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown",
   message: { error: "Too Many Requests" },
 });
