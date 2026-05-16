@@ -899,8 +899,7 @@ export async function getAllStoreOrders(c: Context) {
     const dateTo        = query.dateTo   ? new Date(query.dateTo)   : undefined;
 
     const where: any = {
-        // PAYTR siparişleri callback gelene kadar admin'e düşmesin
-        ...(paymentStatus ? { paymentStatus } : { paymentStatus: { not: "PENDING_PAYMENT" } }),
+        ...(paymentStatus && { paymentStatus }),
         ...(orderStatus    && { orderStatus }),
         ...(paymentMethod  && { paymentMethod }),
         ...(cancelRequest  !== undefined && { cancelRequest }),
