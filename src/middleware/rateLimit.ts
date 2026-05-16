@@ -26,9 +26,14 @@ export const uploadLimiter = rateLimiter({
 });
 
 // PayTR — 10 istek / dakika
+// /callback (PayTR'dan server-to-server) ve /verify/* (frontend polling) bypass edilir;
+// kalan /token ve /refund için brute-force koruması olarak çalışır.
 export const paytrLimiter = rateLimiter({
   windowMs: 60 * 1000,
   limit: 10,
   keyGenerator: (c) => c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown",
   message: { error: "Too Many Requests" },
+  skip: (c) =>
+    c.req.path === "/api/paytr/callback" ||
+    c.req.path.startsWith("/api/paytr/verify/"),
 });

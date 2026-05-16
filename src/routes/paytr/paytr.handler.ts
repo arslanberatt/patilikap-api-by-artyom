@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma.js";
 import { errors } from "../../lib/errors.js";
 import { activityMessages } from "../../lib/activity.js";
 import { sendEmail, buildShelterDonationEmail } from "../../lib/email.js";
+import { logger } from "../../lib/logger.js";
 
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
 
@@ -147,6 +148,9 @@ export async function getPaytrToken(c: Context) {
 // ─── CALLBACK ─────────────────────────────────────────────────────────────────
 
 export async function paytrCallback(c: Context) {
+  const ip = c.req.header("x-forwarded-for")?.split(",")[0].trim()
+    ?? c.req.header("x-real-ip")
+    ?? "unknown";
   const { merchantKey, merchantSalt } = getPaytrEnv();
 
   // form-urlencoded body
@@ -159,11 +163,14 @@ export async function paytrCallback(c: Context) {
 
   const { merchant_oid, status, total_amount, hash } = body;
 
+  logger.info(`[paytr-callback] received ip=${ip} merchant_oid=${merchant_oid} status=${status} total=${total_amount}`);
+
   // 1. Hash doğrula
   const hashStr = merchant_oid + merchantSalt + status + total_amount;
   const expectedHash = crypto.createHmac("sha256", merchantKey).update(hashStr).digest("base64");
 
   if (expectedHash !== hash) {
+    logger.warn(`[paytr-callback] INVALID_HASH merchant_oid=${merchant_oid}`);
     return c.text("INVALID_HASH", 400);
   }
 
@@ -177,7 +184,11 @@ export async function paytrCallback(c: Context) {
     await handleDonationCallback(merchant_oid, status);
   } else if (isStore) {
     await handleStoreCallback(merchant_oid, status);
+  } else {
+    logger.warn(`[paytr-callback] UNKNOWN_PREFIX merchant_oid=${merchant_oid}`);
   }
+
+  logger.info(`[paytr-callback] processed merchant_oid=${merchant_oid} → OK`);
 
   // PayTR düz metin "OK" bekler
   return c.text("OK");
