@@ -431,6 +431,83 @@ export async function paytrRefund(c: Context) {
   return c.json({ success: true });
 }
 
+// ─── PUBLIC ORDER VERIFY ──────────────────────────────────────────────────────
+// /odeme-basarili sayfası mount olduğunda çağrılır. orderNumber'a göre
+// (orderNumber prefix DO veya SO) ilgili tabloyu bulur, PAID değilse PayTR
+// durum-sorgu API'sine sorar ve callback gelmeden de PAID'e çekebilir.
+
+export async function paytrVerifyOrder(c: Context) {
+  const { orderNumber } = c.req.param();
+  const { merchantId, merchantKey, merchantSalt } = getPaytrEnv();
+
+  const isDonation = orderNumber.startsWith("DO");
+  const isStore    = orderNumber.startsWith("SO");
+
+  if (!isDonation && !isStore) {
+    return c.json({ error: "Geçersiz sipariş numarası" }, 400);
+  }
+
+  // Order'ı çek
+  const order = isDonation
+    ? await prisma.order.findFirst({ where: { orderNumber }, include: { items: true, user: true } })
+    : await prisma.storeOrder.findFirst({ where: { orderNumber }, include: { items: true, user: true } });
+
+  if (!order) return c.json({ error: "Sipariş bulunamadı" }, 404);
+
+  // PayTR siparişi değilse durumu olduğu gibi dön
+  if (order.paymentMethod !== "PAYTR") {
+    return c.json({ orderNumber: order.orderNumber, paymentStatus: order.paymentStatus });
+  }
+
+  // Zaten PAID ise sorma
+  if (order.paymentStatus === "PAID") {
+    return c.json({ orderNumber: order.orderNumber, paymentStatus: "PAID" });
+  }
+
+  // PayTR'a durum sor
+  const merchantOid = order.paytxMerchantOid || order.orderNumber;
+  const hashStr = merchantId + merchantOid + merchantSalt;
+  const paytrToken = crypto.createHmac("sha256", merchantKey).update(hashStr).digest("base64");
+
+  const params = new URLSearchParams({
+    merchant_id:  merchantId,
+    merchant_oid: merchantOid,
+    paytr_token:  paytrToken,
+    merchant_key: merchantKey,
+  });
+
+  let payTrSays: { status?: string; payment_status?: string; err_msg?: string } = {};
+  try {
+    const response = await fetch("https://www.paytr.com/odeme/durum-sorgu", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    payTrSays = await response.json() as typeof payTrSays;
+  } catch (err) {
+    console.error("[paytr-verify] durum-sorgu hatası:", err);
+    return c.json({ orderNumber: order.orderNumber, paymentStatus: order.paymentStatus, error: "PayTR durum-sorgu ulaşılamadı" });
+  }
+
+  // PayTR success dönüp ödeme tamamlanmışsa DB'yi güncelle (callback simülasyonu)
+  if (payTrSays.status === "success" && payTrSays.payment_status === "success") {
+    if (isDonation) {
+      await handleDonationCallback(orderNumber, "success");
+    } else {
+      await handleStoreCallback(orderNumber, "success");
+    }
+    return c.json({ orderNumber: order.orderNumber, paymentStatus: "PAID" });
+  }
+
+  // PayTR success ama payment_status != success → ödeme reddedilmiş
+  if (payTrSays.status === "success" && payTrSays.payment_status && payTrSays.payment_status !== "success") {
+    return c.json({ orderNumber: order.orderNumber, paymentStatus: order.paymentStatus, payTrStatus: payTrSays.payment_status });
+  }
+
+  // PayTR'da bu merchant_oid için kayıt yok (kullanıcı iframe'i yarıda kapattı vs.)
+  return c.json({ orderNumber: order.orderNumber, paymentStatus: order.paymentStatus, payTrStatus: "not_found" });
+}
+
 // ─── DURUM SORGU ──────────────────────────────────────────────────────────────
 
 export async function paytrStatusQuery(c: Context) {
