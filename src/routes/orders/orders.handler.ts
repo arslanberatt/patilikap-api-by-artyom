@@ -5,6 +5,7 @@ import { activityMessages } from "../../lib/activity.js";
 import { sendEmail, buildOrderConfirmationEmail, buildOrderCancelledEmail, buildShelterDonationEmail } from "../../lib/email.js";
 import crypto from "crypto";
 import { generatePaytrToken } from "../paytr/paytr.handler.js";
+import { cleanupExpiredOrders } from "../../lib/cleanupExpiredOrders.js";
 
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,50 @@ export async function trackByToken(c: Context) {
 
   if (!order) return c.json(errors.NOT_FOUND, 404);
   return c.json(order);
+}
+
+// Misafir / üye dostu bağış takip — orderNumber + email ile arama
+export async function trackDonationByLookup(c: Context) {
+  const body = await c.req.json() as { orderNumber: string; email: string };
+
+  const order = await prisma.order.findFirst({
+    where: { orderNumber: body.orderNumber },
+    select: {
+      id: true,
+      orderNumber: true,
+      paymentStatus: true,
+      paymentMethod: true,
+      totalAmount: true,
+      createdAt: true,
+      guestName: true,
+      guestEmail: true,
+      userId: true,
+      items: {
+        select: {
+          productName: true,
+          productImage: true,
+          quantity: true,
+          unitPrice: true,
+        },
+      },
+    },
+  });
+
+  if (!order) return c.json({ error: "Sipariş bulunamadı" }, 404);
+
+  let orderEmail: string | null = order.guestEmail;
+  if (!orderEmail && order.userId) {
+    const u = await prisma.user.findUnique({ where: { id: order.userId }, select: { email: true } });
+    orderEmail = u?.email ?? null;
+  }
+
+  if (!orderEmail || orderEmail.toLowerCase() !== body.email.toLowerCase()) {
+    return c.json({ error: "Sipariş bulunamadı" }, 404);
+  }
+
+  const { guestEmail, userId, ...safeOrder } = order;
+  void guestEmail; void userId;
+  return c.json(safeOrder);
 }
 
 export async function cancelByToken(c: Context) {
@@ -196,9 +241,10 @@ export async function createOrder(c: Context) {
   const cancelToken = generateToken();
   const trackingToken = generateToken();
   const cancelTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  // PayTR token timeout 30dk; süresi dolmuş PENDING_PAYMENT'ler cleanup ile CANCELLED'a çekilir
   const expiresAt = body.paymentMethod === "EFT"
-    ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    : null;
+    ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)   // EFT: 30 gün
+    : new Date(Date.now() + 30 * 60 * 1000);             // PayTR: 30 dakika
 
   const order = await prisma.order.create({
     data: {
@@ -309,6 +355,7 @@ export async function createOrder(c: Context) {
 // ─── GİRİŞ YAPMIŞ KULLANICI ───────────────────────────────────────────────────
 
 export async function getMyOrders(c: Context) {
+  cleanupExpiredOrders(); // fire-and-forget: expired PENDING_PAYMENT → CANCELLED
   const user = c.get("user") as { id: string };
   const query = c.req.query();
   const page  = Math.max(1, Number(query.page) || 1);
@@ -462,6 +509,7 @@ export async function requestCancel(c: Context) {
 // ─── ADMIN ────────────────────────────────────────────────────────────────────
 
 export async function getAllOrders(c: Context) {
+  cleanupExpiredOrders(); // fire-and-forget
   const query = c.req.query();
   const page   = Math.max(1, Number(query.page) || 1);
   const limit  = Math.min(100, Math.max(1, Number(query.limit) || 20));
@@ -550,6 +598,12 @@ export async function updateOrderStatus(c: Context) {
   if (!order) return c.json(errors.NOT_FOUND, 404);
 
   const body = await c.req.json() as { paymentStatus: "PAID" | "CANCELLED" | "REFUNDED" };
+
+  // Idempotency: aynı durumdaki bir order'a aynı statüyü tekrar uygulamak no-op
+  // (özellikle PAID → PAID currentStock'u çift artırabilir)
+  if (body.paymentStatus === order.paymentStatus) {
+    return c.json(order);
+  }
 
   const updated = await prisma.order.update({
     where: { id },

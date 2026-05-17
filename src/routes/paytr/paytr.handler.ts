@@ -475,7 +475,8 @@ export async function paytrVerifyOrder(c: Context) {
     return c.json({ orderNumber: order.orderNumber, paymentStatus: "PAID" });
   }
 
-  // PayTR'a durum sor
+  // PayTR'a durum sor — resmi PayTR NodeJS örneğindeki forma uygun:
+  // sadece merchant_id, merchant_oid, paytr_token (merchant_key body'de YOK)
   const merchantOid = order.paytxMerchantOid || order.orderNumber;
   const hashStr = merchantId + merchantOid + merchantSalt;
   const paytrToken = crypto.createHmac("sha256", merchantKey).update(hashStr).digest("base64");
@@ -484,7 +485,6 @@ export async function paytrVerifyOrder(c: Context) {
     merchant_id:  merchantId,
     merchant_oid: merchantOid,
     paytr_token:  paytrToken,
-    merchant_key: merchantKey,
   });
 
   let payTrSays: { status?: string; payment_status?: string; err_msg?: string } = {};
@@ -495,6 +495,7 @@ export async function paytrVerifyOrder(c: Context) {
       body: params.toString(),
     });
     payTrSays = await response.json() as typeof payTrSays;
+    logger.info(`[paytr-verify] merchant_oid=${merchantOid} response=${JSON.stringify(payTrSays)}`);
   } catch (err) {
     console.error("[paytr-verify] durum-sorgu hatası:", err);
     return c.json({ orderNumber: order.orderNumber, paymentStatus: order.paymentStatus, error: "PayTR durum-sorgu ulaşılamadı" });
@@ -543,11 +544,11 @@ export async function paytrStatusQuery(c: Context) {
   const hashStr = merchantId + merchantOid + merchantSalt;
   const paytrToken = crypto.createHmac("sha256", merchantKey).update(hashStr).digest("base64");
 
+  // PayTR resmi örneğine uygun: merchant_key body'de YOK
   const params = new URLSearchParams({
     merchant_id:  merchantId,
     merchant_oid: merchantOid,
     paytr_token:  paytrToken,
-    merchant_key: merchantKey,
   });
 
   const response = await fetch("https://www.paytr.com/odeme/durum-sorgu", {
@@ -563,6 +564,8 @@ export async function paytrStatusQuery(c: Context) {
     err_no?: string;
     err_msg?: string;
   };
+
+  logger.info(`[paytr-status-query] merchant_oid=${merchantOid} response=${JSON.stringify(data)}`);
 
   if (data.status !== "success") {
     // PENDING_PAYMENT için PayTR'da kayıt yok — bu beklenen durum

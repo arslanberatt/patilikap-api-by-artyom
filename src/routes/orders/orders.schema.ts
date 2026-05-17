@@ -31,3 +31,8 @@ export const adminOrdersQuery = paginationQuery.extend({
 export const updateOrderStatusBody = z.object({
   paymentStatus: z.enum(["WAITING_APPROVAL", "PAID", "CANCELLED", "REFUNDED"]),
 });
+
+export const trackLookupBody = z.object({
+  orderNumber: z.string().min(1).max(64),
+  email:       z.string().email(),
+});

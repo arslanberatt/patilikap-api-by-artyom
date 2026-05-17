@@ -33,6 +33,7 @@ import {
   adminDeleteProduct,
   adminDeleteStoreOrder,
   validateCoupon,
+  trackStoreByLookup,
 } from "./store.handler.js";
 import { zv } from "../../lib/zValidator.js";
 import { idParam } from "../../lib/zSchemas.js";
@@ -51,6 +52,7 @@ import {
   adminCreateProductBody,
   adminUpdateProductBody,
   validateCouponBody,
+  trackLookupBody,
 } from "./store.schema.js";
 
 const store = new Hono();
@@ -78,6 +80,7 @@ store.delete("/reviews/:id", requireAuth, zv("param", idParam), deleteMyReview);
 
 // ─── SİPARİŞ — PUBLIC ────────────────────────────────────────────────────────
 store.post("/coupons/validate", zv("json", validateCouponBody), validateCoupon);
+store.post("/orders/track-by-lookup", zv("json", trackLookupBody), trackStoreByLookup);
 store.post("/orders", optionalAuth, zv("json", createStoreOrderBody), createStoreOrder);
 store.get("/orders/track/:token", trackStoreByToken);
 store.post("/orders/cancel/:token", cancelStoreByToken);

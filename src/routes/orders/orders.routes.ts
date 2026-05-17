@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { requireAuth, requireRole, optionalAuth } from "../../middleware/auth.middleware.js";
 import {
   trackByToken,
+  trackDonationByLookup,
   cancelByToken,
   createOrder,
   getMyOrders,
@@ -17,12 +18,13 @@ import {
 } from "./orders.handler.js";
 import { zv } from "../../lib/zValidator.js";
 import { idParam } from "../../lib/zSchemas.js";
-import { createOrderBody, myOrdersQuery, adminOrdersQuery, updateOrderStatusBody } from "./orders.schema.js";
+import { createOrderBody, myOrdersQuery, adminOrdersQuery, updateOrderStatusBody, trackLookupBody } from "./orders.schema.js";
 
 const orders = new Hono();
 
 // ─── PUBLIC ───────────────────────────────────────────────────────────────────
 orders.get("/track/:token", trackByToken);
+orders.post("/track-by-lookup", zv("json", trackLookupBody), trackDonationByLookup);
 orders.post("/cancel/:token", cancelByToken);
 orders.post("/:orderNumber/receipt", uploadDonationReceipt);
 

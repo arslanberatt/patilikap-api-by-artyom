@@ -5,6 +5,7 @@ import { activityMessages } from "../../lib/activity.js";
 import { sendEmail, buildOrderConfirmationEmail, buildOrderCancelledEmail, buildShippingEmail } from "../../lib/email.js";
 import crypto from "crypto";
 import { generatePaytrToken } from "../paytr/paytr.handler.js";
+import { cleanupExpiredOrders } from "../../lib/cleanupExpiredOrders.js";
 
 // ─── YARDIMCI ─────────────────────────────────────────────────────────────────
 
@@ -535,9 +536,10 @@ export async function createStoreOrder(c: Context) {
     const cancelToken = generateToken();
     const trackingToken = generateToken();
     const cancelTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // PayTR token timeout 30dk; süresi dolmuş PENDING_PAYMENT'ler cleanup ile CANCELLED'a çekilir
     const expiresAt = body.paymentMethod === "EFT"
-        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-        : null;
+        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)   // EFT: 30 gün
+        : new Date(Date.now() + 30 * 60 * 1000);             // PayTR: 30 dakika
 
     // Sipariş oluştur
     const order = await prisma.storeOrder.create({
@@ -674,6 +676,7 @@ export async function createStoreOrder(c: Context) {
 // ─── GİRİŞ YAPMIŞ KULLANICI ───────────────────────────────────────────────────
 
 export async function getMyStoreOrders(c: Context) {
+    cleanupExpiredOrders(); // fire-and-forget: expired PENDING_PAYMENT → CANCELLED
     const user = c.get("user") as { id: string };
     const query = c.req.query();
     const page  = Math.max(1, Number(query.page) || 1);
@@ -788,6 +791,66 @@ export async function trackStoreByToken(c: Context) {
 
     if (!order) return c.json(errors.NOT_FOUND, 404);
     return c.json(order);
+}
+
+// Misafir / üye dostu sipariş takip — orderNumber + email ile arama
+export async function trackStoreByLookup(c: Context) {
+    const body = await c.req.json() as { orderNumber: string; email: string };
+
+    const order = await prisma.storeOrder.findFirst({
+        where: { orderNumber: body.orderNumber },
+        select: {
+            id: true,
+            orderNumber: true,
+            paymentStatus: true,
+            orderStatus: true,
+            paymentMethod: true,
+            totalAmount: true,
+            subtotal: true,
+            shippingFee: true,
+            discountAmount: true,
+            createdAt: true,
+            guestName: true,
+            guestEmail: true,
+            userId: true,
+            shipment: {
+                select: {
+                    provider: true,
+                    trackingNumber: true,
+                    trackingUrl: true,
+                    status: true,
+                    estimatedAt: true,
+                },
+            },
+            items: {
+                select: {
+                    productName: true,
+                    productImage: true,
+                    quantity: true,
+                    unitPrice: true,
+                },
+            },
+        },
+    });
+
+    if (!order) return c.json({ error: "Sipariş bulunamadı" }, 404);
+
+    // Email doğrulaması: guest email veya kullanıcının email'i ile karşılaştır
+    let orderEmail: string | null = order.guestEmail;
+    if (!orderEmail && order.userId) {
+        const u = await prisma.user.findUnique({ where: { id: order.userId }, select: { email: true } });
+        orderEmail = u?.email ?? null;
+    }
+
+    if (!orderEmail || orderEmail.toLowerCase() !== body.email.toLowerCase()) {
+        // Bilgi sızdırmamak için aynı hata
+        return c.json({ error: "Sipariş bulunamadı" }, 404);
+    }
+
+    // Email leak yapmamak için response'tan çıkar
+    const { guestEmail, userId, ...safeOrder } = order;
+    void guestEmail; void userId;
+    return c.json(safeOrder);
 }
 
 export async function cancelStoreByToken(c: Context) {
@@ -931,6 +994,7 @@ export async function requestStoreCancel(c: Context) {
 // ─── ADMIN ────────────────────────────────────────────────────────────────────
 
 export async function getAllStoreOrders(c: Context) {
+    cleanupExpiredOrders(); // fire-and-forget
     const query = c.req.query();
     const page  = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));

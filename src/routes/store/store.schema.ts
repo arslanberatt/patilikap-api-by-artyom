@@ -42,6 +42,11 @@ export const validateCouponBody = z.object({
   subtotal: z.number().min(0),
 });
 
+export const trackLookupBody = z.object({
+  orderNumber: z.string().min(1).max(64),
+  email:       z.string().email(),
+});
+
 export const myStoreOrdersQuery = paginationQuery;
 
 export const adminStoreOrdersQuery = paginationQuery.extend({
