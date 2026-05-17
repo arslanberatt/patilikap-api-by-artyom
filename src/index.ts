@@ -156,8 +156,10 @@ app.get("/health", async (c) => {
 });
 
 
-app.get("/docs", swaggerUI({ url: "/docs/json" }));
-app.get("/docs/json", (c) => c.json(openApiDoc));
+if (isDev) {
+  app.get("/docs", swaggerUI({ url: "/docs/json" }));
+  app.get("/docs/json", (c) => c.json(openApiDoc));
+}
 
 
 // ─── ROUTE'LAR ────────────────────────────────────────────────────────────────
