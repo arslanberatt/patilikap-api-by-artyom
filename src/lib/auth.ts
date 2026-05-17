@@ -24,10 +24,12 @@ export const auth = betterAuth({
     "http://localhost:3000",
   ],
   advanced: {
+    crossSubDomainCookies: process.env.COOKIE_DOMAIN
+      ? { enabled: true, domain: process.env.COOKIE_DOMAIN }
+      : { enabled: false },
     defaultCookieAttributes: {
       sameSite: "none",
       secure: true,
-      domain: process.env.COOKIE_DOMAIN || undefined,
     },
   },
   user: {
