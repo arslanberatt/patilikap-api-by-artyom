@@ -1,12 +1,21 @@
 import type { Context, Next } from "hono";
 import { auth } from "../lib/auth.js";
+import { logger } from "../lib/logger.js";
 
 type Role = "ADMIN" | "SHELTER" | "DONOR";
 
 export async function requireAuth(c: Context, next: Next) {
+  const cookieHeader = c.req.header("cookie");
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
 
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  if (!session) {
+    logger.warn(
+      `[AUTH-DEBUG] requireAuth 401 path=${c.req.path} cookieHeader=${
+        cookieHeader ? cookieHeader.slice(0, 200) : "MISSING"
+      } sessionResult=${session === null ? "null" : typeof session}`,
+    );
+    return c.json({ error: "Unauthorized" }, 401);
+  }
 
   c.set("user", session.user);
   await next();
