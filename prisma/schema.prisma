@@ -315,12 +315,25 @@ model Order {
   campaignCode         CampaignCode? @relation(fields: [campaignCodeId], references: [id])
   items                OrderItem[]
 
+  deliveryStatus       DeliveryStatus @default(NOT_SHIPPED)
+  deliveryNote         String?
+  deliveredAt          DateTime?
+  shelterConfirmedAt   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
   @@index([paymentStatus, createdAt])
   @@index([userId, createdAt])
   @@index([cancelRequest, createdAt])
+  @@index([deliveryStatus, createdAt])
+}
+
+enum DeliveryStatus {
+  NOT_SHIPPED
+  PREPARING
+  SHIPPED
+  DELIVERED
 }
 
 model OrderItem {

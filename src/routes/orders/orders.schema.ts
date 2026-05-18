@@ -32,6 +32,11 @@ export const updateOrderStatusBody = z.object({
   paymentStatus: z.enum(["WAITING_APPROVAL", "PAID", "CANCELLED", "REFUNDED"]),
 });
 
+export const updateDeliveryBody = z.object({
+  deliveryStatus: z.enum(["NOT_SHIPPED", "PREPARING", "SHIPPED", "DELIVERED"]),
+  deliveryNote:   z.string().max(500).optional(),
+});
+
 export const trackLookupBody = z.object({
   orderNumber: z.string().min(1).max(64),
   email:       z.string().email(),

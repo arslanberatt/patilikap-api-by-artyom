@@ -42,7 +42,7 @@ async function notifyShelterOwner(order: {
 
   await sendEmail({
     to: shelterOwnerEmail,
-    subject: `Yeni Bağış Alındı — ${order.orderNumber}`,
+    subject: `Yeni Patili Alındı — ${order.orderNumber}`,
     html: buildShelterDonationEmail({
       shelterName: campaign.shelter.name,
       donorName,
@@ -73,6 +73,9 @@ export async function trackByToken(c: Context) {
       totalAmount: true,
       guestName: true,
       guestEmail: true,
+      deliveryStatus: true,
+      deliveredAt: true,
+      shelterConfirmedAt: true,
       createdAt: true,
       items: {
         select: {
@@ -80,6 +83,14 @@ export async function trackByToken(c: Context) {
           productImage: true,
           quantity: true,
           unitPrice: true,
+          campaign: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              shelter: { select: { id: true, name: true } },
+            },
+          },
         },
       },
     },
@@ -105,12 +116,23 @@ export async function trackDonationByLookup(c: Context) {
       guestName: true,
       guestEmail: true,
       userId: true,
+      deliveryStatus: true,
+      deliveredAt: true,
+      shelterConfirmedAt: true,
       items: {
         select: {
           productName: true,
           productImage: true,
           quantity: true,
           unitPrice: true,
+          campaign: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              shelter: { select: { id: true, name: true } },
+            },
+          },
         },
       },
     },
@@ -300,7 +322,7 @@ export async function createOrder(c: Context) {
     await notifyAdmins({
       type: "PAYMENT_RECEIVED",
       title: "Yeni EFT Siparişi",
-      message: `${orderNumber} numaralı yeni bir EFT bağış siparişi var`,
+      message: `${orderNumber} numaralı yeni bir EFT patili siparişi var`,
       link: `/admin/orders/${order.id}`,
     });
 
@@ -377,6 +399,9 @@ export async function getMyOrders(c: Context) {
         paymentMethod: true,
         totalAmount: true,
         cancelRequest: true,
+        deliveryStatus: true,
+        deliveredAt: true,
+        shelterConfirmedAt: true,
         createdAt: true,
         items: {
           select: {
@@ -384,6 +409,14 @@ export async function getMyOrders(c: Context) {
             productImage: true,
             quantity: true,
             unitPrice: true,
+            campaign: {
+              select: {
+                id: true,
+                title: true,
+                slug: true,
+                shelter: { select: { id: true, name: true } },
+              },
+            },
           },
         },
       },
@@ -406,7 +439,14 @@ export async function getOrderById(c: Context) {
     include: {
       items: {
         include: {
-          campaign: { select: { id: true, title: true, slug: true } },
+          campaign: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              shelter: { select: { id: true, name: true } },
+            },
+          },
         },
       },
     },
@@ -496,7 +536,7 @@ export async function requestCancel(c: Context) {
     await notifyAdmins({
       type: "SYSTEM",
       title: "İptal Talebi",
-      message: `${order.orderNumber} numaralı bağış siparişi için iptal talebi geldi`,
+      message: `${order.orderNumber} numaralı patili siparişi için iptal talebi geldi`,
       link: `/admin/orders/${order.id}`,
     });
 
@@ -565,6 +605,10 @@ export async function getAllOrders(c: Context) {
         guestAddress: true,
         guestCity: true,
         receiptUrl: true,
+        deliveryStatus: true,
+        deliveryNote: true,
+        deliveredAt: true,
+        shelterConfirmedAt: true,
         createdAt: true,
         user: { select: { id: true, name: true, email: true, phone: true } },
         items: {
@@ -573,7 +617,14 @@ export async function getAllOrders(c: Context) {
             productName: true,
             quantity: true,
             unitPrice: true,
-            campaign: { select: { id: true, title: true, slug: true } },
+            campaign: {
+              select: {
+                id: true,
+                title: true,
+                slug: true,
+                shelter: { select: { id: true, name: true } },
+              },
+            },
           },
         },
       },
@@ -790,7 +841,7 @@ export async function approveDonationEft(c: Context) {
       targetType: "Order",
       targetId: order.id,
       targetName: order.orderNumber,
-      message: `${order.orderNumber} numaralı bağış siparişi EFT ödemesi onaylandı`,
+      message: `${order.orderNumber} numaralı patili siparişi EFT ödemesi onaylandı`,
     },
   });
 
@@ -800,7 +851,7 @@ export async function approveDonationEft(c: Context) {
         userId: order.userId,
         type: "ORDER_STATUS",
         title: "Ödemeniz Onaylandı",
-        message: `${order.orderNumber} numaralı bağışınızın EFT ödemesi onaylandı`,
+        message: `${order.orderNumber} numaralı patilinizin EFT ödemesi onaylandı`,
         link: `/orders/${order.id}`,
       },
     });
@@ -851,11 +902,169 @@ export async function rejectDonationEft(c: Context) {
       targetType: "Order",
       targetId: order.id,
       targetName: order.orderNumber,
-      message: `${order.orderNumber} numaralı bağış siparişi EFT ödemesi reddedildi`,
+      message: `${order.orderNumber} numaralı patili siparişi EFT ödemesi reddedildi`,
     },
   });
 
   return c.json({ success: true });
+}
+
+// ─── TESLİM AKIŞI ──────────────────────────────────────────────────────────────
+
+export async function updateOrderDelivery(c: Context) {
+  const admin = c.get("user") as { id: string; name: string };
+  const { id } = c.req.param();
+  const body = await c.req.json() as { deliveryStatus: "NOT_SHIPPED" | "PREPARING" | "SHIPPED" | "DELIVERED"; deliveryNote?: string };
+
+  const order = await prisma.order.findFirst({
+    where: { id },
+    include: {
+      items: { include: { campaign: { select: { id: true, title: true, shelterId: true } } } },
+      user: true,
+    },
+  });
+  if (!order) return c.json(errors.NOT_FOUND, 404);
+  if (order.paymentStatus !== "PAID") {
+    return c.json({ error: "Sadece ödenmiş bağışlar için teslim durumu güncellenir" }, 400);
+  }
+
+  const updated = await prisma.order.update({
+    where: { id },
+    data: {
+      deliveryStatus: body.deliveryStatus,
+      deliveryNote: body.deliveryNote ?? order.deliveryNote,
+      deliveredAt: body.deliveryStatus === "DELIVERED" ? new Date() : order.deliveredAt,
+    },
+  });
+
+  // Bildirim: bağışçıya
+  if (order.userId) {
+    await prisma.notification.create({
+      data: {
+        userId: order.userId,
+        type: "ORDER_STATUS",
+        title: "Bağış Teslim Durumu Güncellendi",
+        message: `${order.orderNumber} numaralı bağışınızın teslim durumu: ${deliveryLabel(body.deliveryStatus)}`,
+        link: `/orders/${order.id}`,
+      },
+    });
+  }
+
+  // Bildirim: ilgili barınak sahibine
+  const shelterIds = [...new Set(order.items.map((i) => i.campaign.shelterId).filter(Boolean))];
+  if (shelterIds.length > 0) {
+    const shelters = await prisma.shelter.findMany({
+      where: { id: { in: shelterIds } },
+      select: { id: true, name: true, userId: true },
+    });
+    for (const s of shelters) {
+      if (s.userId) {
+        await prisma.notification.create({
+          data: {
+            userId: s.userId,
+            type: "ORDER_STATUS",
+            title: "Bağış Teslim Durumu Güncellendi",
+            message: `${order.orderNumber} numaralı bağış: ${deliveryLabel(body.deliveryStatus)}`,
+            link: `/shelter-panel/hayirseverler`,
+          },
+        });
+      }
+    }
+  }
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: admin.id,
+      actorName: admin.name,
+      actorType: "ADMIN",
+      action: "ORDER_DELIVERY_UPDATED",
+      targetType: "Order",
+      targetId: order.id,
+      targetName: order.orderNumber,
+      message: `${order.orderNumber} teslim durumu → ${deliveryLabel(body.deliveryStatus)}`,
+      metadata: { deliveryStatus: body.deliveryStatus, deliveryNote: body.deliveryNote },
+    },
+  });
+
+  return c.json(updated);
+}
+
+export async function shelterConfirmDelivery(c: Context) {
+  const user = c.get("user") as { id: string; name: string; role: string };
+  const { id } = c.req.param();
+
+  const shelter = await prisma.shelter.findFirst({
+    where: { userId: user.id },
+    select: { id: true, name: true },
+  });
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  const order = await prisma.order.findFirst({
+    where: { id },
+    include: {
+      items: { select: { campaign: { select: { shelterId: true } } } },
+      user: true,
+    },
+  });
+  if (!order) return c.json(errors.NOT_FOUND, 404);
+
+  const orderShelters = order.items.map((i) => i.campaign.shelterId);
+  if (!orderShelters.includes(shelter.id)) return c.json(errors.FORBIDDEN, 403);
+
+  if (order.paymentStatus !== "PAID") {
+    return c.json({ error: "Sadece ödenmiş bağışlar teyit edilebilir" }, 400);
+  }
+
+  const updated = await prisma.order.update({
+    where: { id },
+    data: {
+      deliveryStatus: "DELIVERED",
+      deliveredAt: order.deliveredAt ?? new Date(),
+      shelterConfirmedAt: new Date(),
+    },
+  });
+
+  if (order.userId) {
+    await prisma.notification.create({
+      data: {
+        userId: order.userId,
+        type: "ORDER_STATUS",
+        title: "Bağışınız Teslim Alındı",
+        message: `${shelter.name} barınağı ${order.orderNumber} numaralı bağışınızı teslim aldığını teyit etti`,
+        link: `/orders/${order.id}`,
+      },
+    });
+  }
+
+  await notifyAdmins({
+    type: "ORDER_STATUS",
+    title: "Barınak Teslim Teyidi",
+    message: `${shelter.name} → ${order.orderNumber} bağışını teslim aldı`,
+    link: `/admin/orders/${order.id}`,
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      actorId: user.id,
+      actorName: user.name,
+      actorType: "SHELTER",
+      action: "ORDER_DELIVERY_CONFIRMED",
+      targetType: "Order",
+      targetId: order.id,
+      targetName: order.orderNumber,
+      message: `${shelter.name} → ${order.orderNumber} bağışını teslim aldığını teyit etti`,
+    },
+  });
+
+  return c.json(updated);
+}
+
+function deliveryLabel(s: string): string {
+  if (s === "NOT_SHIPPED") return "Henüz hazırlanmadı";
+  if (s === "PREPARING")   return "Hazırlanıyor";
+  if (s === "SHIPPED")     return "Yola çıktı";
+  if (s === "DELIVERED")   return "Teslim edildi";
+  return s;
 }
 
 // ─── DEKONT UPLOAD ─────────────────────────────────────────────────────────────
@@ -883,7 +1092,7 @@ export async function uploadDonationReceipt(c: Context) {
   await notifyAdmins({
     type: "PAYMENT_RECEIVED",
     title: "Dekont Yüklendi",
-    message: `${orderNumber} numaralı bağış siparişi için dekont yüklendi`,
+    message: `${orderNumber} numaralı patili siparişi için dekont yüklendi`,
     link: `/admin/orders/${order.id}`,
   });
 

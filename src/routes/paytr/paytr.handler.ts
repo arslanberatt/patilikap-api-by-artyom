@@ -240,7 +240,7 @@ async function handleDonationCallback(orderNumber: string, status: string) {
       if (shelterOwnerEmail) {
         await sendEmail({
           to: shelterOwnerEmail,
-          subject: `Yeni Bağış Alındı — ${order.orderNumber}`,
+          subject: `Yeni Patili Alındı — ${order.orderNumber}`,
           html: buildShelterDonationEmail({
             shelterName: campaign!.shelter.name,
             donorName: order.user?.name || order.guestName || "Anonim",
@@ -489,15 +489,22 @@ export async function paytrVerifyOrder(c: Context) {
 
   let payTrSays: { status?: string; payment_status?: string; err_msg?: string } = {};
   try {
+    logger.info(`[paytr-verify] req merchant_id=${merchantId.slice(0, 4)}*** oid=${merchantOid} tokenLen=${paytrToken.length}`);
     const response = await fetch("https://www.paytr.com/odeme/durum-sorgu", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString(),
     });
-    payTrSays = await response.json() as typeof payTrSays;
-    logger.info(`[paytr-verify] merchant_oid=${merchantOid} response=${JSON.stringify(payTrSays)}`);
+    const text = await response.text();
+    logger.info(`[paytr-verify] http=${response.status} body=${text.slice(0, 500)}`);
+    try {
+      payTrSays = JSON.parse(text);
+    } catch {
+      logger.error(`[paytr-verify] JSON parse hatası body="${text.slice(0, 200)}"`);
+      return c.json({ orderNumber: order.orderNumber, paymentStatus: order.paymentStatus, error: "PayTR cevabı JSON değil", raw: text.slice(0, 200) });
+    }
   } catch (err) {
-    console.error("[paytr-verify] durum-sorgu hatası:", err);
+    logger.error(`[paytr-verify] fetch hatası: ${err}`);
     return c.json({ orderNumber: order.orderNumber, paymentStatus: order.paymentStatus, error: "PayTR durum-sorgu ulaşılamadı" });
   }
 
@@ -551,21 +558,29 @@ export async function paytrStatusQuery(c: Context) {
     paytr_token:  paytrToken,
   });
 
+  logger.info(`[paytr-status-query] req merchant_id=${merchantId.slice(0, 4)}*** oid=${merchantOid} tokenLen=${paytrToken.length}`);
   const response = await fetch("https://www.paytr.com/odeme/durum-sorgu", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
   });
 
-  const data = await response.json() as {
+  const text = await response.text();
+  logger.info(`[paytr-status-query] http=${response.status} body=${text.slice(0, 500)}`);
+
+  let data: {
     status: string;
     payment_status?: string;
     total_amount?: string;
     err_no?: string;
     err_msg?: string;
   };
-
-  logger.info(`[paytr-status-query] merchant_oid=${merchantOid} response=${JSON.stringify(data)}`);
+  try {
+    data = JSON.parse(text);
+  } catch {
+    logger.error(`[paytr-status-query] JSON parse hatası body="${text.slice(0, 200)}"`);
+    return c.json({ error: "PayTR cevabı JSON değil", raw: text.slice(0, 200) }, 502);
+  }
 
   if (data.status !== "success") {
     // PENDING_PAYMENT için PayTR'da kayıt yok — bu beklenen durum

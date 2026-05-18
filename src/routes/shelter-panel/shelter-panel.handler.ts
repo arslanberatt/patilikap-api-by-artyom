@@ -218,6 +218,9 @@ export async function getDonorHistory(c: Context) {
       id: true,
       orderNumber: true,
       totalAmount: true,
+      deliveryStatus: true,
+      deliveredAt: true,
+      shelterConfirmedAt: true,
       createdAt: true,
       items: {
         where: { campaignId: { in: campaignIds } },
@@ -225,7 +228,7 @@ export async function getDonorHistory(c: Context) {
           productName: true,
           quantity: true,
           unitPrice: true,
-          campaign: { select: { title: true } },
+          campaign: { select: { id: true, title: true, shelterId: true } },
         },
       },
     },

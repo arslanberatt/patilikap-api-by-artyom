@@ -245,6 +245,15 @@ const port = Number(process.env.PORT) || 3001;
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
   logger.success(`Server çalışıyor → http://localhost:${info.port} [${process.env.NODE_ENV || "development"}]`);
+
+  const paytrEnvs = ["PAYTR_MERCHANT_ID", "PAYTR_MERCHANT_KEY", "PAYTR_MERCHANT_SALT", "APP_URL", "FRONTEND_URL"];
+  const missing = paytrEnvs.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    logger.warn(`[paytr] ENV eksik: ${missing.join(", ")} — PayTR çağrıları başarısız olacak`);
+  } else {
+    logger.info(`[paytr] env OK (merchant_id=${process.env.PAYTR_MERCHANT_ID!.slice(0, 4)}***, test_mode=${process.env.PAYTR_TEST_MODE === "true" ? "1" : "0"})`);
+  }
+
   if (isDev) {
     logger.info(`CORS: ${allowedOrigins.join(" | ")}`);
     logger.info("Dev modu — verbose log, stack trace, tüm originlere CORS açık");
