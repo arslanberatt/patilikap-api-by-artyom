@@ -62,7 +62,7 @@ export function orderConfirmationHtml(opts: {
   return base(
     `Siparişiniz Alındı — ${opts.orderNumber}`,
     `<h2 style="color:#333;margin-top:0;">Merhaba ${opts.name},</h2>
-    <p>Bağış siparişiniz başarıyla alındı. Teşekkür ederiz! 🐾</p>
+    <p>Patili siparişiniz başarıyla alındı. Teşekkür ederiz! 🐾</p>
     <table width="100%" cellpadding="8" style="border-collapse:collapse;margin:16px 0;">
       <tr style="background:#f9f9f9;">
         <td style="border:1px solid #eee;"><strong>Sipariş No</strong></td>
@@ -86,8 +86,8 @@ export function orderPaidHtml(opts: { name: string; orderNumber: string }): stri
   return base(
     `Ödemeniz Onaylandı — ${opts.orderNumber}`,
     `<h2 style="color:#333;margin-top:0;">Merhaba ${opts.name},</h2>
-    <p>Harika haber! <strong>${opts.orderNumber}</strong> numaralı bağış siparişinizin ödemesi onaylandı.</p>
-    <p>Bağışınız en kısa sürede barınağa iletilecektir. Desteğiniz için çok teşekkür ederiz! 🐾</p>
+    <p>Harika haber! <strong>${opts.orderNumber}</strong> numaralı patili siparişinizin ödemesi onaylandı.</p>
+    <p>Patiliniz en kısa sürede barınağa iletilecektir. Desteğiniz için çok teşekkür ederiz! 🐾</p>
     <a href="${FRONTEND}/siparisler/${opts.orderNumber}"
        style="display:inline-block;background:#e8581e;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;margin-top:16px;">
       Siparişi Görüntüle
@@ -99,7 +99,7 @@ export function orderCancelledHtml(opts: { name: string; orderNumber: string }):
   return base(
     `Siparişiniz İptal Edildi — ${opts.orderNumber}`,
     `<h2 style="color:#333;margin-top:0;">Merhaba ${opts.name},</h2>
-    <p><strong>${opts.orderNumber}</strong> numaralı bağış siparişiniz iptal edildi.</p>
+    <p><strong>${opts.orderNumber}</strong> numaralı patili siparişiniz iptal edildi.</p>
     <p>Herhangi bir sorunuz varsa bizimle iletişime geçebilirsiniz.</p>
     <a href="${FRONTEND}/kampanyalar"
        style="display:inline-block;background:#e8581e;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;margin-top:16px;">

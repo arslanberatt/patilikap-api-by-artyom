@@ -6,7 +6,7 @@ export const openApiDoc = {
     info: {
         title: "Patilikap API",
         version: "1.0.0",
-        description: "Patilikap hayvan barınağı bağış platformu API dokümantasyonu",
+        description: "Patilikap hayvan barınağı patili platformu API dokümantasyonu",
     },
     servers: [
         {
@@ -19,7 +19,7 @@ export const openApiDoc = {
         { name: "Users", description: "Kullanıcı yönetimi" },
         { name: "Shelters", description: "Barınak yönetimi" },
         { name: "Campaigns", description: "Kampanya yönetimi" },
-        { name: "Orders", description: "Bağış siparişleri" },
+        { name: "Orders", description: "Patili siparişleri" },
         { name: "Store", description: "Mağaza ürünleri ve siparişleri" },
         { name: "Stories", description: "Barınak hikayeleri" },
         { name: "Notifications", description: "Bildirimler" },
@@ -395,7 +395,7 @@ export const openApiDoc = {
         // ─── ORDERS ───────────────────────────────────────────────────────────────
         "/api/orders": {
             post: {
-                summary: "Bağış siparişi oluştur (misafir veya üye)",
+                summary: "Patili siparişi oluştur (misafir veya üye)",
                 tags: ["Orders"],
                 requestBody: {
                     content: {

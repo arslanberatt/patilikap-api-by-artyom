@@ -231,22 +231,22 @@ export function buildShelterDonationEmail(data: {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Yeni Bağış Alındı</title>
+  <title>Yeni Patili Alındı</title>
 </head>
 <body style="margin:0;padding:0;background:#f9fafb;font-family:Arial,sans-serif;color:#1f2937;">
   <div style="max-width:600px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
 
     <div style="background:#22c55e;padding:32px;text-align:center;">
       <h1 style="color:#fff;margin:0;font-size:24px;">🐾 Patilikap</h1>
-      <p style="color:#fff;margin:8px 0 0;opacity:0.9;">Yeni Bağış Alındı!</p>
+      <p style="color:#fff;margin:8px 0 0;opacity:0.9;">Yeni Patili Alındı!</p>
     </div>
 
     <div style="padding:32px;">
       <h2 style="margin:0 0 8px;font-size:20px;">Merhaba, ${shelterName}!</h2>
-      <p style="color:#6b7280;margin:0 0 24px;">Kampanyanıza yeni bir bağış yapıldı ve ödeme onaylandı.</p>
+      <p style="color:#6b7280;margin:0 0 24px;">Kampanyanıza yeni bir patili yapıldı ve ödeme onaylandı.</p>
 
       <div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;margin-bottom:24px;border-radius:4px;">
-        <strong>Bağışçı:</strong> ${donorName}<br/>
+        <strong>Patileyen:</strong> ${donorName}<br/>
         <strong>Ödeme Yöntemi:</strong> ${methodLabel}
       </div>
 
@@ -255,7 +255,7 @@ export function buildShelterDonationEmail(data: {
         <p style="margin:4px 0 0;font-size:20px;font-weight:bold;color:#22c55e;letter-spacing:2px;">${orderNumber}</p>
       </div>
 
-      <h3 style="font-size:16px;margin:0 0 12px;">Bağış İçeriği</h3>
+      <h3 style="font-size:16px;margin:0 0 12px;">Patili İçeriği</h3>
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr style="border-bottom:2px solid #f0f0f0;">
