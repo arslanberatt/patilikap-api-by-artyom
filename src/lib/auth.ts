@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "./prisma.js";
+import { sendEmail, buildPasswordResetEmail } from "./email.js";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -10,6 +11,19 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
   emailAndPassword: {
     enabled: true,
+    sendResetPassword: async ({ user, token }) => {
+      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+      const resetUrl = `${frontendUrl}/sifre-sifirla?token=${encodeURIComponent(token)}`;
+      await sendEmail({
+        to: user.email,
+        subject: "Patilikap — Şifre Sıfırlama",
+        html: buildPasswordResetEmail({
+          name: user.name || user.email,
+          resetUrl,
+        }),
+      });
+    },
+    resetPasswordTokenExpiresIn: 60 * 60, // 1 saat
   },
   socialProviders: {
     google: {

@@ -200,6 +200,63 @@ export function buildOrderCancelledEmail(data: {
 }
 
 /**
+ * Şifre sıfırlama maili
+ */
+export function buildPasswordResetEmail(data: { name: string; resetUrl: string }): string {
+  const { name, resetUrl } = data;
+  return `
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Şifre Sıfırlama</title>
+</head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:Arial,sans-serif;color:#1f2937;">
+  <div style="max-width:600px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+    <div style="background:#FD7E14;padding:32px;text-align:center;">
+      <h1 style="color:#fff;margin:0;font-size:24px;">🐾 Patilikap</h1>
+      <p style="color:#fff;margin:8px 0 0;opacity:0.9;">Şifre Sıfırlama Talebi</p>
+    </div>
+
+    <div style="padding:32px;">
+      <h2 style="margin:0 0 8px;font-size:20px;">Merhaba ${name},</h2>
+      <p style="color:#4b5563;margin:0 0 16px;line-height:1.6;">
+        Patilikap hesabınız için şifre sıfırlama talebinde bulunuldu. Yeni şifrenizi belirlemek için aşağıdaki butona tıklayın:
+      </p>
+
+      <div style="text-align:center;margin:32px 0;">
+        <a href="${resetUrl}" style="display:inline-block;background:#FD7E14;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px;">
+          Şifremi Sıfırla
+        </a>
+      </div>
+
+      <p style="color:#6b7280;margin:0 0 8px;font-size:13px;line-height:1.6;">
+        Buton çalışmıyorsa aşağıdaki bağlantıyı tarayıcınıza kopyalayın:
+      </p>
+      <p style="background:#f3f4f6;padding:12px;border-radius:6px;font-size:12px;color:#4b5563;word-break:break-all;margin:0 0 24px;">
+        ${resetUrl}
+      </p>
+
+      <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:4px;font-size:13px;color:#92400e;">
+        Bu bağlantı <strong>1 saat</strong> içinde geçerliliğini yitirecektir. Şifre sıfırlama talebinde bulunmadıysanız bu maili görmezden gelebilirsiniz.
+      </div>
+    </div>
+
+    <div style="background:#f9fafb;padding:24px;text-align:center;border-top:1px solid #f0f0f0;">
+      <p style="margin:0;font-size:13px;color:#9ca3af;">
+        Bu maili <strong>Patilikap</strong> gönderdi.<br/>
+        Sorularınız için <a href="mailto:info@patilikap.com" style="color:#f97316;">info@patilikap.com</a>
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}
+
+/**
  * Barınak sahibine bağış bildirimi maili
  */
 export function buildShelterDonationEmail(data: {
