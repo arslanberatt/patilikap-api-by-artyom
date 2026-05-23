@@ -294,6 +294,44 @@ export async function updateShelter(c: Context) {
   return c.json(updated);
 }
 
+// Admin: barınak kodunu güncelle (manuel) ya da yeniden üret (body boş)
+export async function updateShelterCode(c: Context) {
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({})) as { code?: string };
+
+  const shelter = await prisma.shelter.findUnique({ where: { id } });
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  let newCode: string;
+  if (body.code && body.code.trim()) {
+    newCode = body.code.trim().toUpperCase();
+    if (!/^[A-Z0-9-]{4,20}$/.test(newCode)) {
+      return c.json({ error: "Kod formatı geçersiz (4-20 karakter; A-Z 0-9 ve - serbest)" }, 400);
+    }
+    const conflict = await prisma.shelter.findUnique({ where: { code: newCode } });
+    if (conflict && conflict.id !== id) {
+      return c.json({ error: "Bu kod başka bir barınakta kullanılıyor" }, 409);
+    }
+  } else {
+    // Otomatik yeniden üret — çakışma olursa birkaç kez tekrar dene
+    let attempts = 0;
+    do {
+      newCode = generateShelterCode();
+      const conflict = await prisma.shelter.findUnique({ where: { code: newCode } });
+      if (!conflict || conflict.id === id) break;
+      attempts++;
+    } while (attempts < 5);
+    if (attempts >= 5) return c.json({ error: "Benzersiz kod üretilemedi" }, 500);
+  }
+
+  const updated = await prisma.shelter.update({
+    where: { id },
+    data: { code: newCode },
+    select: { id: true, code: true, name: true },
+  });
+  return c.json(updated);
+}
+
 export async function deactivateShelter(c: Context) {
   const user = c.get("user") as { id: string };
   const { id } = c.req.param();
