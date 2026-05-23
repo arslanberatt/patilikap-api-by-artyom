@@ -420,12 +420,23 @@ export async function createStoreOrder(c: Context) {
         address?: string;
         city?: string;
         addressId?: string;
+        shelterId?: string;
         userIp?: string;
         couponCode?: string;
         receiptUrl?: string;
     };
 
     if (!body.items || body.items.length === 0) return c.json(errors.BAD_REQUEST, 400);
+
+    // Barınağa doğrudan gönderim: teslimat adresi barınaktan gelir, kampanya gerekmez
+    let shelter: { id: string; name: string; address: string | null; city: string } | null = null;
+    if (body.shelterId) {
+        shelter = await prisma.shelter.findFirst({
+            where: { id: body.shelterId, status: "APPROVED" },
+            select: { id: true, name: true, address: true, city: true },
+        });
+        if (!shelter) return c.json({ error: "Geçersiz veya aktif olmayan barınak" }, 400);
+    }
 
     // Resolve contact/address from addressId (logged-in) or direct fields (guest)
     let resolved = {
@@ -449,15 +460,25 @@ export async function createStoreOrder(c: Context) {
         };
     }
 
-    if (!resolved.name || !resolved.email || !resolved.phone || !resolved.address || !resolved.city) {
+    if (shelter) {
+        // Teslimat barınağa: adres barınaktan; iletişim girişli kullanıcıdan ya da guest alanlarından
+        resolved.address = shelter.address ?? shelter.name;
+        resolved.city    = shelter.city;
+        if (!user && (!resolved.name || !resolved.email || !resolved.phone)) {
+            return c.json(errors.BAD_REQUEST, 400);
+        }
+    } else if (!resolved.name || !resolved.email || !resolved.phone || !resolved.address || !resolved.city) {
         return c.json(errors.BAD_REQUEST, 400);
     }
 
-    // Ürünleri çek
+    // Ürünleri çek — barınağa gönderimde hem mağaza hem bağış ürünleri kabul edilir
+    const productWhere = shelter
+        ? { OR: [{ showInStore: true }, { showInDonation: true }], isActive: true }
+        : { showInStore: true, isActive: true };
     const products = await Promise.all(
         body.items.map(async (item) => {
             const product = await prisma.product.findFirst({
-                where: { id: item.productId, showInStore: true, isActive: true },
+                where: { id: item.productId, ...productWhere },
             });
             return { product, quantity: item.quantity };
         })
@@ -489,6 +510,9 @@ export async function createStoreOrder(c: Context) {
     if (config?.freeShippingThreshold && subtotal >= config.freeShippingThreshold) {
         shippingFee = 0;
     }
+
+    // Barınağa doğrudan gönderimde kargo alınmaz
+    if (shelter) shippingFee = 0;
 
     // EFT havale indirimi — paytxSurchargePercent yüzdesi kadar indirim
     let discountAmount = 0;
@@ -546,6 +570,7 @@ export async function createStoreOrder(c: Context) {
         data: {
             orderNumber,
             userId: user?.id || null,
+            shelterId: shelter?.id || null,
             guestName: user ? null : resolved.name!,
             guestEmail: user ? null : resolved.email!,
             guestPhone: user ? null : resolved.phone!,

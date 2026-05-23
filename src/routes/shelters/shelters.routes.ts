@@ -10,6 +10,7 @@ import {
   approveShelter,
   rejectShelter,
   deleteShelter,
+  validateShelterCode,
 } from "./shelters.handler.js";
 import { zv } from "../../lib/zValidator.js";
 import { idParam } from "../../lib/zSchemas.js";
@@ -19,6 +20,7 @@ const shelters = new Hono();
 
 // ─── PUBLIC ───────────────────────────────────────────────────────────────────
 shelters.get("/", zv("query", sheltersListQuery), getShelters);
+shelters.post("/validate-code", validateShelterCode);
 shelters.get("/:id", zv("param", idParam), getShelterById);
 
 // ─── SHELTER ──────────────────────────────────────────────────────────────────

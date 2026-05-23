@@ -6,6 +6,34 @@ import { deleteFile } from "../../lib/bunny.js";
 import { generateUniqueSlug } from "../../lib/slug.js";
 
 
+// ─── PUBLIC: Barınak kodu doğrulama (doğrudan barınağa gönderim için) ──────────
+export async function validateShelterCode(c: Context) {
+  const body = await c.req.json() as { code?: string };
+  const code = body.code?.trim().toUpperCase();
+
+  if (!code) return c.json({ valid: false, error: "Kod boş olamaz" }, 400);
+
+  const shelter = await prisma.shelter.findUnique({
+    where: { code },
+    select: { id: true, name: true, city: true, district: true, status: true },
+  });
+
+  if (!shelter) {
+    return c.json({ valid: false, error: "Geçersiz barınak kodu" });
+  }
+  if (shelter.status !== "APPROVED") {
+    return c.json({ valid: false, error: "Bu barınak şu anda aktif değil" });
+  }
+
+  return c.json({
+    valid: true,
+    shelterId: shelter.id,
+    name: shelter.name,
+    city: shelter.city,
+    district: shelter.district,
+  });
+}
+
 export async function getShelters(c: Context) {
   const query = c.req.query();
   const page  = Math.max(1, Number(query.page) || 1);

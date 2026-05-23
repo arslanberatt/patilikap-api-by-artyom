@@ -5,6 +5,7 @@ import {
   getShelterCampaigns,
   getDonors,
   getDonorHistory,
+  getDirectOrders,
   getDuyurular,
   createDuyuru,
   updateDuyuru,
@@ -21,6 +22,7 @@ shelterPanel.get("/stats",                getStats);
 shelterPanel.get("/campaigns",            getShelterCampaigns);
 shelterPanel.get("/donors",               getDonors);
 shelterPanel.get("/donors/:id/history",   getDonorHistory);
+shelterPanel.get("/direct-orders",        getDirectOrders);
 shelterPanel.get("/announcements",        getDuyurular);
 shelterPanel.post("/announcements",       createDuyuru);
 shelterPanel.put("/announcements/:id",    updateDuyuru);

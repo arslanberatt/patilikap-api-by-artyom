@@ -238,6 +238,37 @@ export async function getDonorHistory(c: Context) {
   return c.json({ orders });
 }
 
+// Kod ile doğrudan barınağa gelen (kampanyasız) siparişler — "Patilemeler"
+export async function getDirectOrders(c: Context) {
+  const user    = c.get("user") as AuthUser;
+  const shelter = await getShelterForUser(user.id);
+  if (!shelter) return c.json({ error: "Barınak bulunamadı" }, 404);
+
+  const orders = await prisma.storeOrder.findMany({
+    where: { shelterId: shelter.id, paymentStatus: "PAID" },
+    select: {
+      id: true,
+      orderNumber: true,
+      totalAmount: true,
+      orderStatus: true,
+      createdAt: true,
+      guestName: true,
+      user: { select: { name: true } },
+      items: {
+        select: {
+          productName: true,
+          productImage: true,
+          quantity: true,
+          unitPrice: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return c.json({ orders });
+}
+
 export async function getDuyurular(c: Context) {
   const user    = c.get("user") as AuthUser;
   const shelter = await getShelterForUser(user.id);
