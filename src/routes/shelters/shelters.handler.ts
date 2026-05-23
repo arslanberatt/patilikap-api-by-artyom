@@ -19,10 +19,10 @@ export async function validateShelterCode(c: Context) {
   });
 
   if (!shelter) {
-    return c.json({ valid: false, error: "Geçersiz barınak kodu" });
+    return c.json({ valid: false, error: "Geçersiz kod" });
   }
   if (shelter.status !== "APPROVED") {
-    return c.json({ valid: false, error: "Bu barınak şu anda aktif değil" });
+    return c.json({ valid: false, error: "Bu kod şu anda kullanılamıyor" });
   }
 
   return c.json({
